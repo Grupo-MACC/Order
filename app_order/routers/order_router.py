@@ -4,8 +4,8 @@ import logging
 from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from business_logic.async_machine import Machine
-from dependencies import get_db, get_machine
+#from business_logic.async_machine import Machine
+from dependencies import get_db
 from sql import crud
 from sql import schemas
 from .router_utils import raise_and_log_error
@@ -38,7 +38,7 @@ async def health_check():
 async def create_order(
     order_schema: schemas.OrderPost,
     db: AsyncSession = Depends(get_db),
-    machine: Machine = Depends(get_machine)
+    #machine: Machine = Depends(get_machine)
 ):
     """Create single order endpoint."""
     logger.debug("POST '/order' endpoint called.")
@@ -47,7 +47,7 @@ async def create_order(
 
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
-        await machine.add_pieces_to_queue(db_order.pieces)
+        #await machine.add_pieces_to_queue(db_order.pieces)
         return db_order
     except Exception as exc:  # @ToDo: To broad exception
         raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating order: {exc}")
@@ -111,14 +111,14 @@ async def get_single_order(
 async def remove_order_by_id(
         order_id: int,
         db: AsyncSession = Depends(get_db),
-        my_machine: Machine = Depends(get_machine)
+        #my_machine: Machine = Depends(get_machine)
 ):
     """Remove order"""
     logger.debug("DELETE '/order/%i' endpoint called.", order_id)
     order = await crud.get_order(db, order_id)
     if not order:
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
-    await my_machine.remove_pieces_from_queue(order.pieces)
+    #await my_machine.remove_pieces_from_queue(order.pieces)
     return await crud.delete_order(db, order_id)
 
 

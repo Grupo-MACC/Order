@@ -26,8 +26,8 @@ async def lifespan(__app: FastAPI):
 
             import dependencies
 
-            logger.info("Creating machine")
-            await dependencies.get_machine()
+            #logger.info("Creating machine")
+            #await dependencies.get_machine()
         except Exception:
             logger.error(
                 "Could not create tables at startup",

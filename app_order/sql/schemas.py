@@ -73,15 +73,15 @@ class Piece(PieceBase):
     #    orm_mode = True
 
 
-class MachineStatusResponse(BaseModel):
-    """machine status schema definition."""
-    status: str = Field(
-        description="Machine's current status",
-        default=None,
-        example="Waiting"
-    )
-    working_piece: Optional[int] = Field(
-        description="Current working piece id. None if not working piece.",
-        example=1
-    )
-    queue: List[int] = Field(description="Queued piece ids")
+#class MachineStatusResponse(BaseModel):
+#    """machine status schema definition."""
+#    status: str = Field(
+#        description="Machine's current status",
+#        default=None,
+#        example="Waiting"
+#    )
+#    working_piece: Optional[int] = Field(
+#        description="Current working piece id. None if not working piece.",
+#        example=1
+#    )
+#    queue: List[int] = Field(description="Queued piece ids")
