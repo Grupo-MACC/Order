@@ -3,7 +3,7 @@
 import logging.config
 import os
 from contextlib import asynccontextmanager
-
+import uvicorn
 from fastapi import FastAPI
 from routers import order_router
 from sql import models
@@ -23,11 +23,6 @@ async def lifespan(__app: FastAPI):
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
-
-            import dependencies
-
-            #logger.info("Creating machine")
-            #await dependencies.get_machine()
         except Exception:
             logger.error(
                 "Could not create tables at startup",
@@ -75,5 +70,8 @@ app = FastAPI(
 )
 
 app.include_router(order_router.router)
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
 
 #python -m uvicorn main:app --reload --port 5000

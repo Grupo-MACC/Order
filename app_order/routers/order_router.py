@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """FastAPI router definitions."""
 import logging
+import httpx
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-#from business_logic.async_machine import Machine
 from dependencies import get_db
 from sql import crud
 from sql import schemas
-from .router_utils import raise_and_log_error
+from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,19 +38,41 @@ async def health_check():
 async def create_order(
     order_schema: schemas.OrderPost,
     db: AsyncSession = Depends(get_db),
-    #machine: Machine = Depends(get_machine)
 ):
-    """Create single order endpoint."""
-    logger.debug("POST '/order' endpoint called.")
+    """Create a single order with its pieces and notify the machine service."""
+    logger.info("Request received to create order with %d pieces.", order_schema.number_of_pieces)
+
     try:
+        # Crear el pedido en la BD
         db_order = await crud.create_order_from_schema(db, order_schema)
 
+        # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
-        #await machine.add_pieces_to_queue(db_order.pieces)
+        pieces = [str(piece.id) for piece in db_order.pieces]
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{MACHINE_SERVICE_URL}/add_pieces_to_queue",
+                    json= pieces
+                )
+                response.raise_for_status()
+
+        except Exception as net_exc:
+            raise_and_log_error(
+                logger,
+                status.HTTP_502_BAD_GATEWAY,
+                f"Failed to contact machine service: {net_exc}"
+            )
+
+        logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
         return db_order
-    except Exception as exc:  # @ToDo: To broad exception
+
+    except ValueError as val_exc:
+        raise_and_log_error(logger, status.HTTP_400_BAD_REQUEST, f"Invalid data: {val_exc}")
+    except Exception as exc:  # TODO: Afinar excepciones
         raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating order: {exc}")
+
 
 
 @router.get(
@@ -66,7 +88,6 @@ async def get_order_list(
     logger.debug("GET '/order' endpoint called.")
     order_list = await crud.get_order_list(db)
     return order_list
-
 
 @router.get(
     "/order/{order_id}",
@@ -93,6 +114,16 @@ async def get_single_order(
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     return order
 
+@router.put(
+    "/update_order_status/{order_id}"
+)
+async def update_order_status(
+    order_id: int,
+    status: str,
+    db: AsyncSession = Depends(get_db)
+):
+    return await crud.update_order_status(db=db, order_id=order_id, status=status)
+
 
 @router.delete(
     "/order/{order_id}",
@@ -118,7 +149,20 @@ async def remove_order_by_id(
     order = await crud.get_order(db, order_id)
     if not order:
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
-    #await my_machine.remove_pieces_from_queue(order.pieces)
+    # Notificar al servicio de máquina
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{MACHINE_SERVICE_URL}/add_pieces_to_queue",
+                json=[order.pieces]
+            )
+            response.raise_for_status()
+    except Exception as net_exc:
+        raise_and_log_error(
+            logger,
+            status.HTTP_502_BAD_GATEWAY,
+            f"Failed to contact machine service: {net_exc}"
+        )
     return await crud.delete_order(db, order_id)
 
 
@@ -136,6 +180,15 @@ async def get_piece_list(
     logger.debug("GET '/piece' endpoint called.")
     return await crud.get_piece_list(db)
 
+@router.get(
+        "/piece_status/{status}",
+        response_model=List[schemas.Piece]
+)
+async def get_piece_list_by_status(
+    status: str,
+    db: AsyncSession = Depends(get_db)
+):
+    return await crud.get_piece_list_by_status(db=db, status=status)
 
 @router.get(
     "/piece/{piece_id}",
@@ -148,5 +201,27 @@ async def get_single_piece(
         db: AsyncSession = Depends(get_db)
 ):
     """Retrieve single piece by id"""
-    logger.debug("GET '/piece/%i' endpoint called.", piece_id)
+    print("GET '/piece/%i' endpoint called.", piece_id)
     return await crud.get_piece(db, piece_id)
+
+@router.put(
+    "/update_piece_status/{piece_id}",
+    response_model=schemas.Piece
+)
+async def update_piece_status(
+    piece_id: str,
+    status: str = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    print(piece_id)
+    return await crud.update_piece_status(db=db, piece_id=piece_id, status=status)
+
+@router.put(
+    "/update_piece_manufacturing_date_to_now/{piece_id}",
+    response_model=schemas.Piece
+)
+async def update_piece_manufacturing_date_to_now(
+    piece_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    return await crud.update_piece_manufacturing_date_to_now(db=db, piece_id=piece_id)
