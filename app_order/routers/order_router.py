@@ -151,10 +151,11 @@ async def remove_order_by_id(
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     # Notificar al servicio de máquina
     try:
+        piece_ids = [p.id for p in order.pieces]
         async with httpx.AsyncClient() as client:
             response = await client.delete(
-                f"{MACHINE_SERVICE_URL}/add_pieces_to_queue",
-                json=[order.pieces]
+                f"{MACHINE_SERVICE_URL}/remove_pieces_from_queue",
+                params=[("piece_ids", pid) for pid in piece_ids]
             )
             response.raise_for_status()
     except Exception as net_exc:
