@@ -4,7 +4,7 @@ import logging
 from fastapi import HTTPException
 import requests
 
-MACHINE_SERVICE_URL = "http://127.0.0.1:5001"
+MACHINE_SERVICE_URL = "http://machine:5001"
 
 
 logger = logging.getLogger(__name__)

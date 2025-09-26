@@ -45,7 +45,7 @@ async def create_order(
     try:
         # Crear el pedido en la BD
         db_order = await crud.create_order_from_schema(db, order_schema)
-
+        print(db_order)
         # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
@@ -59,6 +59,7 @@ async def create_order(
                 response.raise_for_status()
 
         except Exception as net_exc:
+            print("error")
             raise_and_log_error(
                 logger,
                 status.HTTP_502_BAD_GATEWAY,
@@ -66,6 +67,7 @@ async def create_order(
             )
 
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
+        print(db_order)
         return db_order
 
     except ValueError as val_exc:
