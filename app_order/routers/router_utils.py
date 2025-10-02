@@ -5,7 +5,7 @@ from fastapi import HTTPException
 import requests
 
 MACHINE_SERVICE_URL = "http://machine:5001"
-
+DELIVERY_SERVICE_URL = "http://delivery:5002"
 
 logger = logging.getLogger(__name__)
 
