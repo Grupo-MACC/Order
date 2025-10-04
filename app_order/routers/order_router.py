@@ -2,12 +2,16 @@
 """FastAPI router definitions."""
 import logging
 import httpx
+import uuid
 from typing import List
-from fastapi import APIRouter, Depends, status, Body
+from fastapi import APIRouter, Depends, status, Body, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_db
 from sql import crud, schemas, models
-from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL, DELIVERY_SERVICE_URL
+from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL, DELIVERY_SERVICE_URL, PAYMENT_SERVICE_URL
+
+ONE_PIECE_PRICE = 120
+CURRENCY = "EUR"
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,23 +52,21 @@ async def create_order(
         # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
-        pieces = [str(piece.id) for piece in db_order.pieces]
+        payment_payload = {
+            "order_id": db_order.id,
+            "amount_minor": int(ONE_PIECE_PRICE * 100 * db_order.number_of_pieces),  # si total_amount está en euros
+            "currency": CURRENCY
+        }
         try:
             async with httpx.AsyncClient() as client:
+                
                 response = await client.post(
-                    f"{MACHINE_SERVICE_URL}/add_pieces_to_queue",
-                    json= pieces
+                    f"{PAYMENT_SERVICE_URL}/payment",
+                    json=payment_payload
                 )
                 response.raise_for_status()
-
         except Exception as net_exc:
-            print("error")
-            raise_and_log_error(
-                logger,
-                status.HTTP_502_BAD_GATEWAY,
-                f"Failed to contact machine service: {net_exc}"
-            )
-
+            print(net_exc)
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
         print(db_order)
         return db_order
@@ -182,6 +184,34 @@ async def remove_order_by_id(
             f"Failed to contact machine service: {net_exc}"
         )
     return await crud.delete_order(db, order_id)
+
+@router.patch(
+        "/order/payment_made/{order_id}"
+)
+async def payment_made_process(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    order_db = await crud.update_order_status(db=db, order_id=order_id, status=models.Order.STATUS_PAYED)
+    if not order_db:
+        raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
+    pieces = [str(piece.id) for piece in order_db.pieces]
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{MACHINE_SERVICE_URL}/machine/add_pieces_to_queue",
+                json= pieces
+            )
+            response.raise_for_status()
+
+    except Exception as net_exc:
+        print("error")
+        raise_and_log_error(
+            logger,
+            status.HTTP_502_BAD_GATEWAY,
+            f"Failed to contact machine service: {net_exc}"
+        )
+    return {"message": f"Estado de la orden {order_id} actualizado a {order_db.status}"}
 
 
 # Pieces ###########################################################################################

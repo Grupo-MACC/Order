@@ -37,12 +37,14 @@ class BaseModel(Base):
 class Order(BaseModel):
     """order database table representation."""
     STATUS_CREATED = "Created"
+    STATUS_PAYED = "Payed"
     STATUS_FINISHED = "Finished"
     STATUS_DELIVERED = "Delivered"
     __tablename__ = "manufacturing_order"
     id = Column(Integer, primary_key=True)
     number_of_pieces = Column(Integer, nullable=False)
     description = Column(TEXT, nullable=False, default="No description")
+    client_id= Column(Integer, nullable=False)
     status = Column(String(256), nullable=False, default=STATUS_CREATED)
 
     pieces = relationship("Piece", back_populates="order", lazy="joined")

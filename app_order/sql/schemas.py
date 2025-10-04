@@ -23,6 +23,11 @@ class OrderBase(BaseModel):
         default="No description",
         example="CompanyX order on 2022-01-20"
     )
+    client_id: int = Field(
+        description="The identification code of the client",
+        default=None,
+        example=1
+    )
 
     #  pieces = relationship("Piece", lazy="joined")
 
@@ -71,6 +76,13 @@ class Piece(PieceBase):
     #class Config:
     #    """ORM configuration."""
     #    orm_mode = True
+
+
+class PaymentBase(BaseModel):
+    order_id: int = Field(description="Id del pedido a cobrar", example=1)
+    amount_minor: int = Field(description="Importe en céntimos", example=1999)
+    currency: str = Field(description="Moneda ISO-4217", min_length=3, max_length=3, example="EUR")
+
 
 
 #class MachineStatusResponse(BaseModel):
