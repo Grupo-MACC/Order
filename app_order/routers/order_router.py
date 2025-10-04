@@ -6,9 +6,8 @@ from typing import List
 from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_db
-from sql import crud
-from sql import schemas
-from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL
+from sql import crud, schemas, models
+from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL, DELIVERY_SERVICE_URL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -124,7 +123,23 @@ async def update_order_status(
     status: str,
     db: AsyncSession = Depends(get_db)
 ):
-    return await crud.update_order_status(db=db, order_id=order_id, status=status)
+    # Update order status first
+    result = await crud.update_order_status(db=db, order_id=order_id, status=status)
+    print(status)
+    # If status is FINISHED, trigger delivery
+    if status == models.Order.STATUS_FINISHED:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{DELIVERY_SERVICE_URL}/deliver/{order_id}"
+                )
+                response.raise_for_status()
+                logger.info(f"Delivery triggered for order {order_id}")
+        except Exception as e:
+            logger.error(f"Failed to trigger delivery for order {order_id}: {e}")
+            # You might want to handle this error differently
+    
+    return result
 
 
 @router.delete(

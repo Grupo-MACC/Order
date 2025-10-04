@@ -38,7 +38,7 @@ class Order(BaseModel):
     """order database table representation."""
     STATUS_CREATED = "Created"
     STATUS_FINISHED = "Finished"
-
+    STATUS_DELIVERED = "Delivered"
     __tablename__ = "manufacturing_order"
     id = Column(Integer, primary_key=True)
     number_of_pieces = Column(Integer, nullable=False)
