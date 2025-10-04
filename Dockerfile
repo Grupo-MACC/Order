@@ -28,6 +28,4 @@ USER 1000
 COPY app_order /home/pyuser/code/app_order
 
 # Run the application
-ENTRYPOINT ["./entrypoint.sh"]
-
-
+ENTRYPOINT ["/home/pyuser/code/entrypoint.sh"]
