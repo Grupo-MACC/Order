@@ -37,7 +37,7 @@ class BaseModel(Base):
 class Order(BaseModel):
     """order database table representation."""
     STATUS_CREATED = "Created"
-    STATUS_PAYED = "Payed"
+    STATUS_PAYED = "Paid"
     STATUS_FINISHED = "Finished"
     STATUS_DELIVERED = "Delivered"
     __tablename__ = "manufacturing_order"
