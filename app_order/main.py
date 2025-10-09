@@ -5,6 +5,7 @@ import os
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
+import asyncio
 from routers import order_router
 from sql import models
 from sql import database
@@ -29,12 +30,12 @@ async def lifespan(__app: FastAPI):
                 "Could not create tables at startup",
             )
         try:
-            setup_rabbitmq.setup_rabbitmq()
+            await setup_rabbitmq.setup_rabbitmq()
         except Exception as e:
             logger.error(f"❌ Error configurando RabbitMQ: {e}")
 
         try:
-            order_broker_service.start_order_broker_service()
+            task = asyncio.create_task(order_broker_service.consume_payment_events())
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
 
@@ -43,6 +44,8 @@ async def lifespan(__app: FastAPI):
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
+        logger.info("Shutting down rabbitmq")
+        task.cancel()
 
 
 # OpenAPI Documentation ############################################################################

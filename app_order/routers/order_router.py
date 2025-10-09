@@ -48,7 +48,7 @@ async def create_order(
     try:
         # Crear el pedido en la BD
         db_order = await crud.create_order_from_schema(db, order_schema)
-        print(db_order)
+        logger.info(db_order)
         # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
@@ -68,9 +68,11 @@ async def create_order(
         c
             print(net_exc)'''
         try:
-            order_broker_service.publish_order_created(db_order.id)
+            logger.info(db_order)
+            logger.info(db_order.id)
+            await order_broker_service.publish_order_created(db_order.id)
         except Exception as net_exc:
-            print(net_exc)
+            logger.info(net_exc)
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
         print(db_order)
         return db_order

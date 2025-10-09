@@ -1,22 +1,32 @@
-import pika
+from aio_pika import connect_robust, ExchangeType
 
-RABBITMQ_HOST = "rabbitmq"
+RABBITMQ_HOST = "amqp://guest:guest@rabbitmq/"
 EXCHANGE_NAME = "order_payment_exchange"
 
-def setup_rabbitmq():
-    #Establece conexion con el server
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
-    channel = connection.channel()
+async def setup_rabbitmq():
+    """
+    Configura RabbitMQ creando el exchange y las colas necesarias
+    usando aio_pika (asíncrono).
+    """
+    # Conexión robusta con RabbitMQ
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
 
-    #Creamos el topic es decir el exchange
-    channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type="topic", durable=True)
+    # Crear el exchange tipo 'topic'
+    exchange = await channel.declare_exchange(
+        EXCHANGE_NAME,
+        ExchangeType.TOPIC,
+        durable=True
+    )
 
-    #Declaramos 2 colas para los pagos
-    channel.queue_declare(queue='order_paid_queue', durable=True)
-    channel.queue_declare(queue='order_failed_queue', durable=True)
+    # Crear colas
+    order_paid_queue = await channel.declare_queue("order_paid_queue", durable=True)
+    order_failed_queue = await channel.declare_queue("order_failed_queue", durable=True)
 
-    #Asociamos la cola a una ruta del exchange
-    channel.queue_bind(exchange=EXCHANGE_NAME, queue='order_paid_queue', routing_key='payment.paid')
-    channel.queue_bind(exchange=EXCHANGE_NAME, queue='order_failed_queue', routing_key='payment.failed')
+    # Enlazar colas con el exchange
+    await order_paid_queue.bind(exchange, routing_key="payment.paid")
+    await order_failed_queue.bind(exchange, routing_key="payment.failed")
 
-    connection.close()
+    print("✅ RabbitMQ configurado correctamente (exchange + colas creadas).")
+
+    await connection.close()

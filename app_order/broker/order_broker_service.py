@@ -1,42 +1,49 @@
-import pika
+import asyncio
 import json
-from broker.setup_rabbitmq import EXCHANGE_NAME, RABBITMQ_HOST
-import threading
+import logging
+from aio_pika import connect_robust, Message, ExchangeType
+from services import order_service
+from broker.setup_rabbitmq import RABBITMQ_HOST, EXCHANGE_NAME
 
-def publish_order_created(order_id):
-    #Abre conexion con el host
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
-    #Se conecta al cana
-    channel = connection.channel()
-    message = {"order_id": order_id}
-    print(message)
-    channel.basic_publish(
-        exchange=EXCHANGE_NAME,
-        routing_key='order.created',
-        body=json.dumps(message)
+logger = logging.getLogger(__name__)
+
+async def handle_payment_paid(message):
+    async with message.process():
+        data = json.loads(message.body)
+        order_id = data["order_id"]
+
+        db_order = await order_service.update_order_status(order_id=order_id, status="PAID")
+        print(db_order)
+        logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
+
+async def handle_payment_failed(message):
+    async with message.process():
+        data = json.loads(message.body)
+        logger.info(f"[ORDER] ❌ Pago fallido para orden: {data}")
+
+async def consume_payment_events():
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
+    
+    order_paid_queue = await channel.declare_queue("order_paid_queue", durable=True)
+    order_failed_queue = await channel.declare_queue("order_failed_queue", durable=True)
+    
+    await order_paid_queue.bind(EXCHANGE_NAME, routing_key="payment.paid")
+    await order_failed_queue.bind(EXCHANGE_NAME, routing_key="payment.failed")
+
+    await order_paid_queue.consume(handle_payment_paid)
+    await order_failed_queue.consume(handle_payment_failed)
+
+    logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
+    await asyncio.Future()  # nunca termina, mantiene el loop activo
+
+async def publish_order_created(order_id):
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
+    exchange = await channel.declare_exchange(EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    await exchange.publish(
+        Message(body=json.dumps({"order_id": order_id}).encode()),
+        routing_key="order.created"
     )
-    print(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
-    connection.close()
-
-def handle_payment_paid(ch, method, properties, body):
-    data = json.loads(body)
-    print(f"[ORDER] ✅ Pago confirmado para orden: {data} — iniciando fabricación...")
-
-def handle_payment_failed(ch, method, properties, body):
-    data = json.loads(body)
-    print(f"[ORDER] ❌ Pago fallido para orden: {data} — cancelando...")
-
-def consume_payment_events():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
-    channel = connection.channel()
-
-    channel.basic_consume(queue='order_paid_queue', on_message_callback=handle_payment_paid, auto_ack=True)
-    channel.basic_consume(queue='order_failed_queue', on_message_callback=handle_payment_failed, auto_ack=True)
-
-    print("[ORDER] 🟢 Escuchando eventos de pago...")
-    channel.start_consuming()
-
-def start_order_broker_service():
-    t = threading.Thread(target=consume_payment_events, daemon=True)
-    t.start()
-    print("[PAYMENT BROKER] 🚀 Servicio de RabbitMQ lanzado en background")
+    logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
+    await connection.close()

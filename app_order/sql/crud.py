@@ -50,7 +50,7 @@ async def delete_order(db: AsyncSession, order_id):
     return await delete_element_by_id(db, models.Order, order_id)
 
 
-async def update_order_status(db: AsyncSession, order_id, status):
+async def update_order_status(db: AsyncSession, order_id, status) -> models.Order:
     """Persist new order status on the database."""
     db_order = await get_element_by_id(db, models.Order, order_id)
     if db_order is not None:
