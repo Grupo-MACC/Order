@@ -9,6 +9,7 @@ def publish_order_created(order_id):
     #Se conecta al cana
     channel = connection.channel()
     message = {"order_id": order_id}
+    print(message)
     channel.basic_publish(
         exchange=EXCHANGE_NAME,
         routing_key='order.created',
@@ -19,11 +20,11 @@ def publish_order_created(order_id):
 
 def handle_payment_paid(ch, method, properties, body):
     data = json.loads(body)
-    print(f"[ORDER] ✅ Pago confirmado para orden: {data['order_id']} — iniciando fabricación...")
+    print(f"[ORDER] ✅ Pago confirmado para orden: {data} — iniciando fabricación...")
 
 def handle_payment_failed(ch, method, properties, body):
     data = json.loads(body)
-    print(f"[ORDER] ❌ Pago fallido para orden: {data['order_id']} — cancelando...")
+    print(f"[ORDER] ❌ Pago fallido para orden: {data} — cancelando...")
 
 def consume_payment_events():
     connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))

@@ -8,8 +8,7 @@ from fastapi import FastAPI
 from routers import order_router
 from sql import models
 from sql import database
-from broker.setup_rabbitmq import setup_rabbitmq
-from broker import order_broker_service
+from broker import order_broker_service, setup_rabbitmq
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
 logger = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ async def lifespan(__app: FastAPI):
                 "Could not create tables at startup",
             )
         try:
-            setup_rabbitmq()
+            setup_rabbitmq.setup_rabbitmq()
         except Exception as e:
             logger.error(f"❌ Error configurando RabbitMQ: {e}")
 
