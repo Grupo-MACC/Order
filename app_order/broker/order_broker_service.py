@@ -1,9 +1,12 @@
 import pika
 import json
 from broker.setup_rabbitmq import EXCHANGE_NAME, RABBITMQ_HOST
+import threading
 
 def publish_order_created(order_id):
+    #Abre conexion con el host
     connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
+    #Se conecta al cana
     channel = connection.channel()
     message = {"order_id": order_id}
     channel.basic_publish(
@@ -31,3 +34,8 @@ def consume_payment_events():
 
     print("[ORDER] 🟢 Escuchando eventos de pago...")
     channel.start_consuming()
+
+def start_order_broker_service():
+    t = threading.Thread(target=consume_payment_events, daemon=True)
+    t.start()
+    print("[PAYMENT BROKER] 🚀 Servicio de RabbitMQ lanzado en background")

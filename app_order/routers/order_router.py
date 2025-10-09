@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_db
 from sql import crud, schemas, models
 from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL, DELIVERY_SERVICE_URL, PAYMENT_SERVICE_URL
-
+from broker import order_broker_service
 ONE_PIECE_PRICE = 120
 CURRENCY = "EUR"
 
@@ -52,12 +52,12 @@ async def create_order(
         # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
-        payment_payload = {
-            "order_id": db_order.id,
-            "amount_minor": int(ONE_PIECE_PRICE * 100 * db_order.number_of_pieces),  # si total_amount está en euros
-            "currency": CURRENCY
-        }
-        try:
+        # payment_payload = {
+        #     "order_id": db_order.id,
+        #     "amount_minor": int(ONE_PIECE_PRICE * 100 * db_order.number_of_pieces),  # si total_amount está en euros
+        #     "currency": CURRENCY
+        # }
+        '''try:
             async with httpx.AsyncClient() as client:
                 
                 response = await client.post(
@@ -65,12 +65,16 @@ async def create_order(
                     json=payment_payload
                 )
                 response.raise_for_status()
+        c
+            print(net_exc)'''
+        try:
+            order_broker_service.publish_order_created(db_order.id)
         except Exception as net_exc:
             print(net_exc)
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
         print(db_order)
         return db_order
-
+        
     except ValueError as val_exc:
         raise_and_log_error(logger, status.HTTP_400_BAD_REQUEST, f"Invalid data: {val_exc}")
     except Exception as exc:  # TODO: Afinar excepciones
