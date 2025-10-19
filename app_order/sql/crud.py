@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 # order functions ##################################################################################
-async def create_order_from_schema(db: AsyncSession, order):
+async def create_order_from_schema(db: AsyncSession, order, current_user):
     """Persist a new order into the database."""
     db_order = models.Order(
         number_of_pieces=order.number_of_pieces,
         description=order.description,
-        client_id=order.client_id
+        client_id=current_user
     )
     db.add(db_order)
     await db.commit()

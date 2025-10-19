@@ -23,11 +23,6 @@ class OrderBase(BaseModel):
         default="No description",
         example="CompanyX order on 2022-01-20"
     )
-    client_id: int = Field(
-        description="The identification code of the client",
-        default=None,
-        example=1
-    )
 
     #  pieces = relationship("Piece", lazy="joined")
 

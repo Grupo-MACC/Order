@@ -9,6 +9,8 @@ MACHINE_SERVICE_URL = "http://machine:5001"
 DELIVERY_SERVICE_URL = "http://delivery:5002"
 PAYMENT_SERVICE_URL = "http://payment:5003"
 #PAYMENT_SERVICE_URL = "http://localhost:5003"
+AUTH_SERVICE_URL = "http://auth:5004"
+#AUTH_SERVICE_URL = "http://localhost:5004"
 
 logger = logging.getLogger(__name__)
 

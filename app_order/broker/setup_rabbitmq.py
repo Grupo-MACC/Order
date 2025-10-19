@@ -1,7 +1,8 @@
 from aio_pika import connect_robust, ExchangeType
 
 RABBITMQ_HOST = "amqp://guest:guest@rabbitmq/"
-EXCHANGE_NAME = "order_payment_exchange"
+ORDER_PAYMENT_EXCHANGE_NAME = "order_payment_exchange"
+AUTH_RUNNING_EXCHANGE_NAME = "auth_active_exchange"
 
 async def setup_rabbitmq():
     """
@@ -14,7 +15,7 @@ async def setup_rabbitmq():
 
     # Crear el exchange tipo 'topic'
     exchange = await channel.declare_exchange(
-        EXCHANGE_NAME,
+        ORDER_PAYMENT_EXCHANGE_NAME,
         ExchangeType.TOPIC,
         durable=True
     )
