@@ -19,6 +19,12 @@ async def setup_rabbitmq():
         ExchangeType.TOPIC,
         durable=True
     )
+    
+    exchange_auth = await channel.declare_exchange(
+        AUTH_RUNNING_EXCHANGE_NAME,
+        ExchangeType.DIRECT,
+        durable=True
+    )
 
     # Crear colas
     order_paid_queue = await channel.declare_queue("order_paid_queue", durable=True)
@@ -27,6 +33,12 @@ async def setup_rabbitmq():
     # Enlazar colas con el exchange
     await order_paid_queue.bind(exchange, routing_key="payment.paid")
     await order_failed_queue.bind(exchange, routing_key="payment.failed")
+    
+    auth_running_queue = await channel.declare_queue("auth_running_queue", durable=True)
+    auth_not_running_queue = await channel.declare_queue("auth_not_running_queue", durable=True)
+    
+    await auth_running_queue.bind(exchange_auth, routing_key="auth.running")
+    await auth_not_running_queue.bind(exchange_auth, routing_key="auth.not_running")
 
     print("✅ RabbitMQ configurado correctamente (exchange + colas creadas).")
 

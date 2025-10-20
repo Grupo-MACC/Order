@@ -6,7 +6,7 @@ from aio_pika import connect_robust, Message, ExchangeType
 from services import order_service
 from broker.setup_rabbitmq import RABBITMQ_HOST, ORDER_PAYMENT_EXCHANGE_NAME, AUTH_RUNNING_EXCHANGE_NAME
 from routers.router_utils import AUTH_SERVICE_URL
-from dependencies import PUBLIC_KEY_PATH
+from core.security import PUBLIC_KEY_PATH
 
 logger = logging.getLogger(__name__)
 

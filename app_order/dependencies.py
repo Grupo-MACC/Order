@@ -8,9 +8,6 @@ from core.security import decode_token
 logger = logging.getLogger(__name__)
 auth_scheme = HTTPBearer()
 
-PUBLIC_KEY_PATH = "auth_public.pem"
-
-
 # Database #########################################################################################
 async def get_db():
     """Generates database sessions and closes them when finished."""
