@@ -6,7 +6,7 @@ from aio_pika import connect_robust, Message, ExchangeType
 from services import order_service
 from broker.setup_rabbitmq import RABBITMQ_HOST, ORDER_PAYMENT_EXCHANGE_NAME, AUTH_RUNNING_EXCHANGE_NAME
 from routers.router_utils import AUTH_SERVICE_URL
-from dependencies import PUBLIC_KEY_PATH
+#from dependencies import PUBLIC_KEY_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,8 @@ async def handle_payment_paid(message):
         data = json.loads(message.body)
         order_id = data["order_id"]
 
-        db_order = await order_service.update_order_status(order_id=order_id, status="PAID")
+        db_order = await order_service.update_order_status(order_id=order_id, status="Paid")
+        #db_order = await update_order_status(order_id=order_id, status="Paid")
         print(db_order)
         logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
 
@@ -39,7 +40,7 @@ async def consume_payment_events():
 
     logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
     await asyncio.Future()
-    
+'''
 async def handle_auth_running(message):
     """Se ejecuta cuando el servicio Auth está 'running'."""
     async with message.process():
@@ -91,6 +92,7 @@ async def consume_auth_events():
     
     await auth_running_queue.consume(handle_auth_running)
     await auth_not_running_queue.consume(handle_auth_not_running)
+'''    
 
 async def publish_order_created(order_id):
     connection = await connect_robust(RABBITMQ_HOST)
@@ -102,3 +104,37 @@ async def publish_order_created(order_id):
     )
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
     await connection.close()
+
+async def publish_order_paid(order_id):
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
+    exchange = await channel.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    await exchange.publish(
+        Message(body=json.dumps({"order_id": order_id}).encode()),
+        routing_key="order.ready"
+    )
+    logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
+    await connection.close()
+
+async def consume_delivery_events():
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
+    
+    delivery_ready_queue = await channel.declare_queue("delivery_ready_queue", durable=True)
+    
+    await delivery_ready_queue.bind(ORDER_PAYMENT_EXCHANGE_NAME, routing_key="delivery.ready")
+
+
+    await delivery_ready_queue.consume(handle_delivery_ready)
+
+    logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
+    await asyncio.Future()
+
+async def handle_delivery_ready(message):
+    async with message.process():
+        data = json.loads(message.body)
+        order_id = data["order_id"]
+
+        db_order = await order_service.update_order_status(order_id=order_id, status="Delivered")
+        print(db_order)
+        logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")

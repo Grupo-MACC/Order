@@ -6,10 +6,12 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, status, Body, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from dependencies import get_db, get_current_user
+from dependencies import get_db
+#from dependencies import get_current_user
 from sql import crud, schemas, models
 from .router_utils import raise_and_log_error, MACHINE_SERVICE_URL, DELIVERY_SERVICE_URL, PAYMENT_SERVICE_URL
 from broker import order_broker_service
+from services import order_service
 ONE_PIECE_PRICE = 120
 CURRENCY = "EUR"
 
@@ -41,14 +43,15 @@ async def health_check():
 async def create_order(
     order_schema: schemas.OrderPost,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     """Create a single order with its pieces and notify the machine service."""
     logger.info("Request received to create order with %d pieces.", order_schema.number_of_pieces)
 
     try:
         # Crear el pedido en la BD
-        db_order = await crud.create_order_from_schema(db, order_schema, current_user)
+        db_order = await crud.create_order_from_schema_test(db, order_schema)
+
         logger.info(db_order)
         # Añadir piezas al pedido
         for _ in range(order_schema.number_of_pieces):
@@ -93,7 +96,7 @@ async def create_order(
 )
 async def get_order_list(
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     """Retrieve order list"""
     logger.debug("GET '/order' endpoint called.")
@@ -117,7 +120,7 @@ async def get_order_list(
 async def get_single_order(
         order_id: int,
         db: AsyncSession = Depends(get_db),
-        current_user: str = Depends(get_current_user)
+#        current_user: str = Depends(get_current_user)
 ):
     """Retrieve single order by id"""
     logger.debug("GET '/order/%i' endpoint called.", order_id)
@@ -133,13 +136,14 @@ async def update_order_status(
     order_id: int,
     status: str,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     # Update order status first
-    result = await crud.update_order_status(db=db, order_id=order_id, status=status)
+    result = await order_service.update_order_status(db=db, order_id=order_id, status=status)
     print(status)
     # If status is FINISHED, trigger delivery
-    if status == models.Order.STATUS_FINISHED:
+    if status == models.Order.STATUS_PAID:
+        '''
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -150,6 +154,14 @@ async def update_order_status(
         except Exception as e:
             logger.error(f"Failed to trigger delivery for order {order_id}: {e}")
             # You might want to handle this error differently
+        '''
+        try:
+            logger.info(order_id)
+            await order_broker_service.publish_order_paid(order_id)
+        except Exception as net_exc:
+            logger.info(net_exc)
+        logger.info("Order %s finished successfully.", order_id)
+
     
     return result
 
@@ -171,7 +183,7 @@ async def update_order_status(
 async def remove_order_by_id(
         order_id: int,
         db: AsyncSession = Depends(get_db),
-        current_user: str = Depends(get_current_user)
+#        current_user: str = Depends(get_current_user)
 ):
     """Remove order"""
     logger.debug("DELETE '/order/%i' endpoint called.", order_id)
@@ -201,7 +213,7 @@ async def remove_order_by_id(
 async def payment_made_process(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     order_db = await crud.update_order_status(db=db, order_id=order_id, status=models.Order.STATUS_PAYED)
     if not order_db:
@@ -234,7 +246,7 @@ async def payment_made_process(
 )
 async def get_piece_list(
         db: AsyncSession = Depends(get_db),
-        current_user: str = Depends(get_current_user)
+#        current_user: str = Depends(get_current_user)
 ):
     """Retrieve the list of pieces."""
     logger.debug("GET '/piece' endpoint called.")
@@ -247,7 +259,7 @@ async def get_piece_list(
 async def get_piece_list_by_status(
     status: str,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     return await crud.get_piece_list_by_status(db=db, status=status)
 
@@ -260,7 +272,7 @@ async def get_piece_list_by_status(
 async def get_single_piece(
         piece_id: int,
         db: AsyncSession = Depends(get_db),
-        current_user: str = Depends(get_current_user)
+#        current_user: str = Depends(get_current_user)
 ):
     """Retrieve single piece by id"""
     print("GET '/piece/%i' endpoint called.", piece_id)
@@ -274,7 +286,7 @@ async def update_piece_status(
     piece_id: str,
     status: str = Body(...),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     print(piece_id)
     return await crud.update_piece_status(db=db, piece_id=piece_id, status=status)
@@ -286,6 +298,6 @@ async def update_piece_status(
 async def update_piece_manufacturing_date_to_now(
     piece_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+#    current_user: str = Depends(get_current_user)
 ):
     return await crud.update_piece_manufacturing_date_to_now(db=db, piece_id=piece_id)
