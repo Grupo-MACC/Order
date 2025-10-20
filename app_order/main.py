@@ -40,6 +40,12 @@ async def lifespan(__app: FastAPI):
         except Exception as e:
             logger.error(f"Error lanzando payment broker service: {e}")
 
+        try:
+            task_machine = asyncio.create_task(order_broker_service.consume_machine_events())
+            logger.info("[ORDER] 🟢 Machine consumer launched")
+        except Exception as e:
+            logger.error(f"❌ Error lanzando machine events consumer: {e}")
+            task_machine = None
 
         yield
     finally:

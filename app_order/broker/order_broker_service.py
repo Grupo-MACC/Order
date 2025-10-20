@@ -102,3 +102,61 @@ async def publish_order_created(order_id):
     )
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
     await connection.close()
+
+
+async def handle_machine_job_completed(message):
+    async with message.process():  # ack automático si no falla
+        print("[ORDER] handler called!")   # <<-- AÑADIR
+        data = json.loads(message.body)
+        print("[ORDER] payload:", data)    # <<-- 
+        
+        try:
+            data = json.loads(message.body)
+        except Exception:
+            logger.exception("[ORDER] ❌ Mensaje inválido en machine.job.completed")
+            return
+
+        order_id = data.get("order_id")
+        piece_ids = data.get("piece_ids", [])
+
+        logger.info(f"[ORDER] 📥 machine.job.completed recibido order={order_id} pieces={piece_ids}")
+
+        # 🔧 Aquí actualizas el estado del pedido a DONE (o Finished) con tu lógica
+        try:
+            # Si tienes un servicio interno:
+            # from services.order_service import update_order_status
+            # await update_order_status(order_id=order_id, status="DONE")
+
+            # Por ahora, solo logueamos como prueba:
+            logger.info(f"[ORDER] ✅ Order {order_id} DONE (machine.job.completed)")
+        except Exception as e:
+            logger.exception(f"[ORDER] ❌ Error marcando DONE order={order_id}: {e}")
+
+
+# --- Machine-order
+RABBITMQ_HOST_PLANT = "amqp://guest:guest@rabbitmq/"
+PLANT_EXCHANGE_NAME = "plant.events"
+
+async def consume_machine_events():
+    """
+    Order escucha machine.job.completed de Machine.
+    Declara la cola 'order_machine_completed_queue' y la bindea al exchange 'plant.events'
+    con la routing_key 'machine.job.completed'.
+    """
+    print("[ORDER] starting consume_machine_events()")   # <<--
+
+    connection = await connect_robust(RABBITMQ_HOST_PLANT)
+    channel = await connection.channel()
+
+    exchange = await channel.declare_exchange(PLANT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+
+    queue = await channel.declare_queue("order_machine_completed_queue", durable=True)
+    await queue.bind(exchange, routing_key="machine.job.completed")
+
+    await queue.consume(handle_machine_job_completed)
+    logger.info("[ORDER] 🟢 Escuchando machine.job.completed …")
+    
+    print("[ORDER] listening machine.job.completed ...")   # <<--
+
+    # Mantener viva la tarea
+    await asyncio.Future()
