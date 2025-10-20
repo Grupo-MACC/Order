@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 import asyncio
-from routers import order_router
+from routers import order_router, order_router_private
 from sql import models
 from sql import database
 from broker import order_broker_service, setup_rabbitmq
@@ -54,6 +54,7 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down rabbitmq")
         task_payment.cancel()
         task_auth.cancel()
+        task_payment.cancel()
 
 
 # OpenAPI Documentation ############################################################################
@@ -93,6 +94,7 @@ app = FastAPI(
 )
 
 app.include_router(order_router.router)
+app.include_router(order_router_private.router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
