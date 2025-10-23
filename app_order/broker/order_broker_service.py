@@ -4,7 +4,7 @@ import logging
 import httpx
 from aio_pika import connect_robust, Message, ExchangeType
 from services import order_service
-from broker.setup_rabbitmq import RABBITMQ_HOST, ORDER_PAYMENT_EXCHANGE_NAME, AUTH_RUNNING_EXCHANGE_NAME
+from core.config import settings
 from routers.router_utils import AUTH_SERVICE_URL
 from core.security import PUBLIC_KEY_PATH
 
@@ -25,14 +25,14 @@ async def handle_payment_failed(message):
         logger.info(f"[ORDER] ❌ Pago fallido para orden: {data}")
 
 async def consume_payment_events():
-    connection = await connect_robust(RABBITMQ_HOST)
+    connection = await connect_robust(settings.RABBITMQ_HOST)
     channel = await connection.channel()
     
     order_paid_queue = await channel.declare_queue("order_paid_queue", durable=True)
     order_failed_queue = await channel.declare_queue("order_failed_queue", durable=True)
     
-    await order_paid_queue.bind(ORDER_PAYMENT_EXCHANGE_NAME, routing_key="payment.paid")
-    await order_failed_queue.bind(ORDER_PAYMENT_EXCHANGE_NAME, routing_key="payment.failed")
+    await order_paid_queue.bind(settings.EXCHANGE_NAME, routing_key="payment.paid")
+    await order_failed_queue.bind(settings.EXCHANGE_NAME, routing_key="payment.failed")
 
     await order_paid_queue.consume(handle_payment_paid)
     await order_failed_queue.consume(handle_payment_failed)
@@ -42,11 +42,18 @@ async def consume_payment_events():
     
 async def handle_auth_running(message):
     """Se ejecuta cuando el servicio Auth está 'running'."""
+    ERROR_LOG_PATH = "/home/pyuser/code/error_log.txt"
     async with message.process():
         data = json.loads(message.body)
         if data["service"] == "auth" and data["status"] == "running":
             try:
-                async with httpx.AsyncClient() as client:
+               async with httpx.AsyncClient(
+                verify="/certs/ca.pem",
+                cert=("/certs/order/order-cert.pem", "/certs/order/order-key.pem"),
+                http2=False,               # Forzar HTTP/1.1
+                timeout=30.0,              # Aumentar tiempo de espera
+                trust_env=False            # Ignorar variables de entorno
+                ) as client:
                     response = await client.get(
                         f"{AUTH_SERVICE_URL}/auth/public-key"
                     )
@@ -59,6 +66,12 @@ async def handle_auth_running(message):
                     logger.info(f"✅ Clave pública de Auth guardada en {PUBLIC_KEY_PATH}")
             except Exception as exc:
                 logger.error(f"Error obteniendo clave pública de Auth: {exc}")
+                error_msg = f"Error obteniendo clave pública de Auth: {exc}"
+                logger.error(error_msg)
+
+                # Escribir también el error en un archivo de texto
+                with open(ERROR_LOG_PATH, "a", encoding="utf-8") as f:
+                    f.write(error_msg + "\n")
                 
     
 async def handle_auth_not_running(message):
@@ -80,24 +93,24 @@ async def handle_auth_not_running(message):
         
 
 async def consume_auth_events():
-    connection = await connect_robust(RABBITMQ_HOST)
+    connection = await connect_robust(settings.RABBITMQ_HOST)
     channel = await connection.channel()
     
     auth_running_queue = await channel.declare_queue("auth_running_queue", durable=True)
     auth_not_running_queue = await channel.declare_queue("auth_not_running_queue", durable=True)
     
-    await auth_running_queue.bind(AUTH_RUNNING_EXCHANGE_NAME, routing_key="auth.running")
-    await auth_not_running_queue.bind(AUTH_RUNNING_EXCHANGE_NAME, routing_key="auth.not_running")
+    await auth_running_queue.bind(settings.EXCHANGE_NAME, routing_key="auth.running")
+    await auth_not_running_queue.bind(settings.EXCHANGE_NAME, routing_key="auth.not_running")
     
     await auth_running_queue.consume(handle_auth_running)
     await auth_not_running_queue.consume(handle_auth_not_running)
 
-async def publish_order_created(order_id):
-    connection = await connect_robust(RABBITMQ_HOST)
+async def publish_order_created(order_id, number_of_pieces):
+    connection = await connect_robust(settings.RABBITMQ_HOST)
     channel = await connection.channel()
-    exchange = await channel.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    exchange = await channel.declare_exchange(settings.EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
     await exchange.publish(
-        Message(body=json.dumps({"order_id": order_id}).encode()),
+        Message(body=json.dumps({"order_id": order_id, "number_of_pieces": number_of_pieces, "message": "Orden creada"}).encode()),
         routing_key="order.created"
     )
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
@@ -132,11 +145,6 @@ async def handle_machine_job_completed(message):
         except Exception as e:
             logger.exception(f"[ORDER] ❌ Error marcando DONE order={order_id}: {e}")
 
-
-# --- Machine-order
-RABBITMQ_HOST_PLANT = "amqp://guest:guest@rabbitmq/"
-PLANT_EXCHANGE_NAME = "plant.events"
-
 async def consume_machine_events():
     """
     Order escucha machine.job.completed de Machine.
@@ -145,10 +153,10 @@ async def consume_machine_events():
     """
     print("[ORDER] starting consume_machine_events()")   # <<--
 
-    connection = await connect_robust(RABBITMQ_HOST_PLANT)
+    connection = await connect_robust(settings.RABBITMQ_HOST)
     channel = await connection.channel()
 
-    exchange = await channel.declare_exchange(PLANT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    exchange = await channel.declare_exchange(settings.EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
 
     queue = await channel.declare_queue("order_machine_completed_queue", durable=True)
     await queue.bind(exchange, routing_key="machine.job.completed")

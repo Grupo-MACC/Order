@@ -1,8 +1,5 @@
 from aio_pika import connect_robust, ExchangeType
-
-RABBITMQ_HOST = "amqp://guest:guest@rabbitmq/"
-ORDER_PAYMENT_EXCHANGE_NAME = "order_payment_exchange"
-AUTH_RUNNING_EXCHANGE_NAME = "auth_active_exchange"
+from core.config import settings
 
 async def setup_rabbitmq():
     """
@@ -10,19 +7,12 @@ async def setup_rabbitmq():
     usando aio_pika (asíncrono).
     """
     # Conexión robusta con RabbitMQ
-    connection = await connect_robust(RABBITMQ_HOST)
+    connection = await connect_robust(settings.RABBITMQ_HOST)
     channel = await connection.channel()
-
     # Crear el exchange tipo 'topic'
     exchange = await channel.declare_exchange(
-        ORDER_PAYMENT_EXCHANGE_NAME,
+        settings.EXCHANGE_NAME,
         ExchangeType.TOPIC,
-        durable=True
-    )
-    
-    exchange_auth = await channel.declare_exchange(
-        AUTH_RUNNING_EXCHANGE_NAME,
-        ExchangeType.DIRECT,
         durable=True
     )
 
@@ -37,8 +27,8 @@ async def setup_rabbitmq():
     auth_running_queue = await channel.declare_queue("auth_running_queue", durable=True)
     auth_not_running_queue = await channel.declare_queue("auth_not_running_queue", durable=True)
     
-    await auth_running_queue.bind(exchange_auth, routing_key="auth.running")
-    await auth_not_running_queue.bind(exchange_auth, routing_key="auth.not_running")
+    await auth_running_queue.bind(exchange, routing_key="auth.running")
+    await auth_not_running_queue.bind(exchange, routing_key="auth.not_running")
 
     print("✅ RabbitMQ configurado correctamente (exchange + colas creadas).")
 

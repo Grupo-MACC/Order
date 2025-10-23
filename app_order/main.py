@@ -54,7 +54,7 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down rabbitmq")
         task_payment.cancel()
         task_auth.cancel()
-        task_payment.cancel()
+        task_machine.cancel()
 
 
 # OpenAPI Documentation ############################################################################

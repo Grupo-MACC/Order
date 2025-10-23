@@ -4,7 +4,7 @@ from sqlalchemy import Column, DateTime, Integer, String, TEXT, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
-
+#from microservice_chassis_grupo2.sql.models import BaseModel
 
 class BaseModel(Base):
     """Base database table representation to reuse."""
@@ -32,7 +32,6 @@ class BaseModel(Base):
     def as_dict(self):
         """Return the item as dict."""
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
 
 class Order(BaseModel):
     """order database table representation."""
