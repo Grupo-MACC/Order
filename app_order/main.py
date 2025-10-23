@@ -38,6 +38,7 @@ async def lifespan(__app: FastAPI):
             task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
             #task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
             task_delivery = asyncio.create_task(order_broker_service.consume_delivery_events())
+            task_machine = asyncio.create_task(order_broker_service.consume_machine_events())
 
         except Exception as e:
             logger.error(f"Error lanzando payment broker service: {e}")
@@ -50,7 +51,7 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down rabbitmq")
         task_payment.cancel()
         task_delivery.cancel()
-        #task_auth.cancel()
+        task_machine.cancel()
 
 
 # OpenAPI Documentation ############################################################################

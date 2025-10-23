@@ -135,11 +135,11 @@ async def get_single_order(
 async def update_order_status(
     order_id: int,
     status: str,
-    db: AsyncSession = Depends(get_db),
+    #db: AsyncSession = Depends(get_db),
 #    current_user: str = Depends(get_current_user)
 ):
     # Update order status first
-    result = await order_service.update_order_status(db=db, order_id=order_id, status=status)
+    result = await order_service.update_order_status(order_id=order_id, status=status)
     print(status)
     # If status is FINISHED, trigger delivery
     if status == models.Order.STATUS_PAID:
@@ -157,7 +157,7 @@ async def update_order_status(
         '''
         try:
             logger.info(order_id)
-            await order_broker_service.publish_order_paid(order_id)
+            await order_broker_service.publish_order_created(order_id)
         except Exception as net_exc:
             logger.info(net_exc)
         logger.info("Order %s finished successfully.", order_id)

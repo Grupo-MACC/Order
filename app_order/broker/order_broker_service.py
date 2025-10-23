@@ -17,6 +17,11 @@ async def handle_payment_paid(message):
 
         db_order = await order_service.update_order_status(order_id=order_id, status="Paid")
         #db_order = await update_order_status(order_id=order_id, status="Paid")
+        try:
+            piece_ids = [str(piece.id) for piece in db_order.pieces]
+        except Exception as exc:
+            print(exc)
+        await publish_do_pieces(order_id=order_id,piece_ids=piece_ids)
         print(db_order)
         logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
 
@@ -105,17 +110,6 @@ async def publish_order_created(order_id):
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
     await connection.close()
 
-async def publish_order_paid(order_id):
-    connection = await connect_robust(RABBITMQ_HOST)
-    channel = await connection.channel()
-    exchange = await channel.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
-    await exchange.publish(
-        Message(body=json.dumps({"order_id": order_id}).encode()),
-        routing_key="order.ready"
-    )
-    logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
-    await connection.close()
-
 async def consume_delivery_events():
     connection = await connect_robust(RABBITMQ_HOST)
     channel = await connection.channel()
@@ -134,7 +128,41 @@ async def handle_delivery_ready(message):
     async with message.process():
         data = json.loads(message.body)
         order_id = data["order_id"]
-
-        db_order = await order_service.update_order_status(order_id=order_id, status="Delivered")
+        status = data["status"]
+        db_order = await order_service.update_order_status(order_id=order_id, status=status)
         print(db_order)
         logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
+
+##Machine
+async def handle_pieces_done(message):
+    async with message.process():
+        data = json.loads(message.body)
+        #order_id  = data["order_id"]
+        piece_id = data["piece_id"]
+        status = data["status"]
+        await order_service.update_piece_status(piece_id, status)
+
+async def consume_machine_events():
+    conn = await connect_robust(RABBITMQ_HOST)
+    ch   = await conn.channel()
+    ex   = await ch.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    q    = await ch.declare_queue("pieces_done_queue", durable=True)
+    await q.bind(ex, routing_key="piece.done")
+    await q.consume(handle_pieces_done)
+    logger.info("[ORDER] 🟢 Escuchando piece.done …")
+    import asyncio; await asyncio.Future()
+
+async def publish_do_pieces(order_id: int, piece_ids: list[str]):
+    connection  = await connect_robust(RABBITMQ_HOST)
+    channel     = await connection.channel()
+    exchange    = await channel.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+
+    payload = {"order_id": order_id, "piece_ids": piece_ids}
+    msg = Message(
+        json.dumps(payload).encode(),
+        content_type="application/json",
+        headers={"event": "do.pieces"}
+    )
+    await exchange.publish(msg, routing_key="do.pieces")
+    logger.info(f"[ORDER] 📤 machine.do_pieces → order={order_id} pieces={piece_ids}")
+    await connection.close()
