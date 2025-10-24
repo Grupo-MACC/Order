@@ -142,13 +142,23 @@ async def handle_pieces_done(message):
         status = data["status"]
         await order_service.update_piece_status(piece_id, status)
 
+async def handle_pieces_date(message):
+    async with message.process():
+        data = json.loads(message.body)
+        #order_id  = data["order_id"]
+        piece_id = data["piece_id"]
+        await order_service.update_piece_manufacturing_date_to_now(piece_id)
+
 async def consume_machine_events():
     conn = await connect_robust(RABBITMQ_HOST)
     ch   = await conn.channel()
     ex   = await ch.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
     q    = await ch.declare_queue("pieces_done_queue", durable=True)
+    q2  = await ch.declare_queue("piece_date_queue", durable=True)
     await q.bind(ex, routing_key="piece.done")
+    await q2.bind(ex, routing_key="piece.date")
     await q.consume(handle_pieces_done)
+    await q2.consume(handle_pieces_date)
     logger.info("[ORDER] 🟢 Escuchando piece.done …")
     import asyncio; await asyncio.Future()
 

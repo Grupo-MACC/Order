@@ -21,3 +21,13 @@ async def update_piece_status(piece_id: int, status: str) -> models.Piece | None
     except Exception as exc:
         print(f"Error actualizando el estado de la pieza {piece_id}: {exc}")
         return None
+
+async def update_piece_manufacturing_date_to_now(piece_id: int) -> models.Piece | None:
+    try:
+        async for db in get_db():
+            db_piece = await crud.update_piece_manufacturing_date_to_now(db=db, piece_id=piece_id)
+
+        return db_piece
+    except Exception as exc:
+        print(f"Error actualizando el estado de la pieza {piece_id}: {exc}")
+        return None
