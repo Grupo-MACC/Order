@@ -36,7 +36,10 @@ async def lifespan(__app: FastAPI):
 
         try:
             task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
-            task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
+            #task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
+            task_delivery = asyncio.create_task(order_broker_service.consume_delivery_events())
+            task_machine = asyncio.create_task(order_broker_service.consume_machine_events())
+
         except Exception as e:
             logger.error(f"Error lanzando payment broker service: {e}")
 
@@ -53,7 +56,7 @@ async def lifespan(__app: FastAPI):
         await database.engine.dispose()
         logger.info("Shutting down rabbitmq")
         task_payment.cancel()
-        task_auth.cancel()
+        task_delivery.cancel()
         task_machine.cancel()
 
 

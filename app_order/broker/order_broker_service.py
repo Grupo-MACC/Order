@@ -6,7 +6,6 @@ from aio_pika import connect_robust, Message, ExchangeType
 from services import order_service
 from core.config import settings
 from routers.router_utils import AUTH_SERVICE_URL
-from core.security import PUBLIC_KEY_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +14,13 @@ async def handle_payment_paid(message):
         data = json.loads(message.body)
         order_id = data["order_id"]
 
-        db_order = await order_service.update_order_status(order_id=order_id, status="PAID")
+        db_order = await order_service.update_order_status(order_id=order_id, status="Paid")
+        #db_order = await update_order_status(order_id=order_id, status="Paid")
+        try:
+            piece_ids = [str(piece.id) for piece in db_order.pieces]
+        except Exception as exc:
+            print(exc)
+        await publish_do_pieces(order_id=order_id,piece_ids=piece_ids)
         print(db_order)
         logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
 
@@ -39,7 +44,7 @@ async def consume_payment_events():
 
     logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
     await asyncio.Future()
-    
+'''
 async def handle_auth_running(message):
     """Se ejecuta cuando el servicio Auth está 'running'."""
     ERROR_LOG_PATH = "/home/pyuser/code/error_log.txt"
@@ -104,6 +109,7 @@ async def consume_auth_events():
     
     await auth_running_queue.consume(handle_auth_running)
     await auth_not_running_queue.consume(handle_auth_not_running)
+'''    
 
 async def publish_order_created(order_id, number_of_pieces):
     connection = await connect_robust(settings.RABBITMQ_HOST)
@@ -116,55 +122,69 @@ async def publish_order_created(order_id, number_of_pieces):
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")
     await connection.close()
 
+async def consume_delivery_events():
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
+    
+    delivery_ready_queue = await channel.declare_queue("delivery_ready_queue", durable=True)
+    
+    await delivery_ready_queue.bind(ORDER_PAYMENT_EXCHANGE_NAME, routing_key="delivery.ready")
 
-async def handle_machine_job_completed(message):
-    async with message.process():  # ack automático si no falla
-        print("[ORDER] handler called!")   # <<-- AÑADIR
+
+    await delivery_ready_queue.consume(handle_delivery_ready)
+
+    logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
+    await asyncio.Future()
+
+async def handle_delivery_ready(message):
+    async with message.process():
         data = json.loads(message.body)
-        print("[ORDER] payload:", data)    # <<-- 
-        
-        try:
-            data = json.loads(message.body)
-        except Exception:
-            logger.exception("[ORDER] ❌ Mensaje inválido en machine.job.completed")
-            return
+        order_id = data["order_id"]
+        status = data["status"]
+        db_order = await order_service.update_order_status(order_id=order_id, status=status)
+        print(db_order)
+        logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
 
-        order_id = data.get("order_id")
-        piece_ids = data.get("piece_ids", [])
+##Machine
+async def handle_pieces_done(message):
+    async with message.process():
+        data = json.loads(message.body)
+        #order_id  = data["order_id"]
+        piece_id = data["piece_id"]
+        status = data["status"]
+        await order_service.update_piece_status(piece_id, status)
 
-        logger.info(f"[ORDER] 📥 machine.job.completed recibido order={order_id} pieces={piece_ids}")
-
-        # 🔧 Aquí actualizas el estado del pedido a DONE (o Finished) con tu lógica
-        try:
-            # Si tienes un servicio interno:
-            # from services.order_service import update_order_status
-            # await update_order_status(order_id=order_id, status="DONE")
-
-            # Por ahora, solo logueamos como prueba:
-            logger.info(f"[ORDER] ✅ Order {order_id} DONE (machine.job.completed)")
-        except Exception as e:
-            logger.exception(f"[ORDER] ❌ Error marcando DONE order={order_id}: {e}")
+async def handle_pieces_date(message):
+    async with message.process():
+        data = json.loads(message.body)
+        #order_id  = data["order_id"]
+        piece_id = data["piece_id"]
+        await order_service.update_piece_manufacturing_date_to_now(piece_id)
 
 async def consume_machine_events():
-    """
-    Order escucha machine.job.completed de Machine.
-    Declara la cola 'order_machine_completed_queue' y la bindea al exchange 'plant.events'
-    con la routing_key 'machine.job.completed'.
-    """
-    print("[ORDER] starting consume_machine_events()")   # <<--
+    conn = await connect_robust(RABBITMQ_HOST)
+    ch   = await conn.channel()
+    ex   = await ch.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+    q    = await ch.declare_queue("pieces_done_queue", durable=True)
+    q2  = await ch.declare_queue("piece_date_queue", durable=True)
+    await q.bind(ex, routing_key="piece.done")
+    await q2.bind(ex, routing_key="piece.date")
+    await q.consume(handle_pieces_done)
+    await q2.consume(handle_pieces_date)
+    logger.info("[ORDER] 🟢 Escuchando piece.done …")
+    import asyncio; await asyncio.Future()
 
-    connection = await connect_robust(settings.RABBITMQ_HOST)
-    channel = await connection.channel()
+async def publish_do_pieces(order_id: int, piece_ids: list[str]):
+    connection  = await connect_robust(RABBITMQ_HOST)
+    channel     = await connection.channel()
+    exchange    = await channel.declare_exchange(ORDER_PAYMENT_EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
 
-    exchange = await channel.declare_exchange(settings.EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
-
-    queue = await channel.declare_queue("order_machine_completed_queue", durable=True)
-    await queue.bind(exchange, routing_key="machine.job.completed")
-
-    await queue.consume(handle_machine_job_completed)
-    logger.info("[ORDER] 🟢 Escuchando machine.job.completed …")
-    
-    print("[ORDER] listening machine.job.completed ...")   # <<--
-
-    # Mantener viva la tarea
-    await asyncio.Future()
+    payload = {"order_id": order_id, "piece_ids": piece_ids}
+    msg = Message(
+        json.dumps(payload).encode(),
+        content_type="application/json",
+        headers={"event": "do.pieces"}
+    )
+    await exchange.publish(msg, routing_key="do.pieces")
+    logger.info(f"[ORDER] 📤 machine.do_pieces → order={order_id} pieces={piece_ids}")
+    await connection.close()
