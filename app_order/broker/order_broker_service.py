@@ -129,11 +129,11 @@ async def consume_auth_events():
     
     exchange = await declare_exchange(channel)
     
-    delivery_queue = await channel.declare_queue('delivery_queue', durable=True)
-    await delivery_queue.bind(exchange, routing_key="auth.running")
-    await delivery_queue.bind(exchange, routing_key="auth.not_running")
+    order_queue = await channel.declare_queue('order_queue', durable=True)
+    await order_queue.bind(exchange, routing_key="auth.running")
+    await order_queue.bind(exchange, routing_key="auth.not_running")
     
-    await delivery_queue.consume(handle_auth_events)
+    await order_queue.consume(handle_auth_events)
 
 async def handle_auth_events(message):
     async with message.process():
