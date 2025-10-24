@@ -1,20 +1,13 @@
-from aio_pika import connect_robust, ExchangeType
-from core.config import settings
+from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange
 
 async def setup_rabbitmq():
     """
     Configura RabbitMQ creando el exchange y las colas necesarias
     usando aio_pika (asíncrono).
     """
-    # Conexión robusta con RabbitMQ
-    connection = await connect_robust(settings.RABBITMQ_HOST)
-    channel = await connection.channel()
-    # Crear el exchange tipo 'topic'
-    exchange = await channel.declare_exchange(
-        settings.EXCHANGE_NAME,
-        ExchangeType.TOPIC,
-        durable=True
-    )
+    connection, channel = await get_channel()
+    
+    exchange = await declare_exchange(channel)
 
     # Crear colas
     order_paid_queue = await channel.declare_queue("order_paid_queue", durable=True)

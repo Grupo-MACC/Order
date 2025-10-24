@@ -13,3 +13,4 @@ pika
 aio_pika
 pyJWT
 cryptography
+microservice-chassis-grupo2

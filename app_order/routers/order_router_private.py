@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """FastAPI router definitions."""
 import logging
-import httpx
-import uuid
 from typing import List
-from fastapi import APIRouter, Depends, status, Body, BackgroundTasks
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from dependencies import get_db, get_current_user
-from sql import crud, schemas, models
-from broker import order_broker_service
-from .router_utils import raise_and_log_error
+from microservice_chassis_grupo2.core.dependencies import get_db
+from sql import crud, schemas
+from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -26,6 +23,20 @@ async def get_piece_list_by_status(
     db: AsyncSession = Depends(get_db)
 ):
     return await crud.get_piece_list_by_status(db=db, status=status)
+
+@router.get(
+    "/piece/{piece_id}",
+    summary="Retrieve single piece by id",
+    response_model=schemas.Piece,
+    tags=['Piece']
+)
+async def get_single_piece(
+        piece_id: int,
+        db: AsyncSession = Depends(get_db),
+):
+    """Retrieve single piece by id"""
+    print("GET '/piece/%i' endpoint called.", piece_id)
+    return await crud.get_piece(db, piece_id)
 
 @router.get(
     "/order/{order_id}",
