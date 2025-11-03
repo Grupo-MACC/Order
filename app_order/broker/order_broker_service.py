@@ -45,12 +45,12 @@ async def consume_payment_events():
     logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
     await asyncio.Future()
 
-async def publish_order_created(order_id, number_of_pieces):
+async def publish_order_created(order_id, number_of_pieces, user_id):
     connection, channel = await get_channel()
     
     exchange = await declare_exchange(channel)
     await exchange.publish(
-        Message(body=json.dumps({"order_id": order_id, "number_of_pieces": number_of_pieces, "message": "Orden creada"}).encode()),
+        Message(body=json.dumps({"order_id": order_id, "number_of_pieces": number_of_pieces, "user_id": user_id, "message": "Orden creada"}).encode()),
         routing_key="order.created"
     )
     logger.info(f"[ORDER] 📤 Publicado evento order.created → {order_id}")

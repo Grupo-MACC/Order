@@ -20,7 +20,7 @@ uvicorn app_order.main:app \
   --ssl-keyfile /certs/order/order-key.pem \
   --ssl-certfile /certs/order/order-cert.pem \
   --ssl-ca-certs /certs/ca.pem \
-  --ssl-cert-reqs 2 &  # 2 = ssl.CERT_REQUIRED (cliente debe autenticarse)
+  --ssl-cert-reqs 1 &
 
 UVICORN_PID=$!
 

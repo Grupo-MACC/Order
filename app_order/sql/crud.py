@@ -22,19 +22,6 @@ async def create_order_from_schema(db: AsyncSession, order, current_user):
     await db.refresh(db_order)
     return db_order
 
-async def create_order_from_schema_test(db: AsyncSession, order):
-    """Persist a new order into the database."""
-    db_order = models.Order(
-        number_of_pieces=order.number_of_pieces,
-        description=order.description,
-        #client_id=current_user
-        client_id=1
-    )
-    db.add(db_order)
-    await db.commit()
-    await db.refresh(db_order)
-    return db_order
-
 async def add_piece_to_order(db: AsyncSession, order):
     """Creates piece and adds it to order."""
     piece = models.Piece()
