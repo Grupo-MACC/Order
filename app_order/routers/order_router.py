@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
+from saga.state_machine import my_states,order_saga  # importa tu orquestador
 from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
 from sql import crud, schemas, models
@@ -37,6 +38,14 @@ async def health_check():
     status_code=status.HTTP_201_CREATED,
     tags=["Order"]
 )
+
+@router.post(
+    "",
+    response_model=schemas.Order,
+    summary="Create single order",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Order"]
+)
 async def create_order(
     order_schema: schemas.OrderPost,
     db: AsyncSession = Depends(get_db),
@@ -46,26 +55,34 @@ async def create_order(
     logger.info("Request received to create order with %d pieces.", order_schema.number_of_pieces)
 
     try:
-        # Crear el pedido en la BD
         db_order = await crud.create_order_from_schema(db, order_schema, user)
 
-        logger.info(db_order)
-        # Añadir piezas al pedido
+        # Añadir piezas
         for _ in range(order_schema.number_of_pieces):
             db_order = await crud.add_piece_to_order(db, db_order)
-        try:
-            logger.info(db_order)
-            logger.info(db_order.id)
-            await order_broker_service.publish_order_created(db_order.id, db_order.number_of_pieces, user)
-        except Exception as net_exc:
-            logger.info(net_exc)
+
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
-        print(db_order)
+
+        # 🔹 1️⃣ Crear una nueva saga para esta orden
+        saga = order_saga.OrderSaga(order_id=db_order.id)
+
+        # 🔹 2️⃣ Enviar el evento inicial a la saga
+        event = {
+            "type": "order_created",
+            "order_data": {
+                "order_id": db_order.id,
+                "user_id": user,
+                "number_of_pieces": db_order.number_of_pieces,
+                "address": db_order.address
+            }
+        }
+
+        # 🔹 3️⃣ Procesar el evento
+        await saga.on_event(event)
+
         return db_order
-        
-    except ValueError as val_exc:
-        raise_and_log_error(logger, status.HTTP_400_BAD_REQUEST, f"Invalid data: {val_exc}")
-    except Exception as exc: 
+
+    except Exception as exc:
         raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating order: {exc}")
 
 
