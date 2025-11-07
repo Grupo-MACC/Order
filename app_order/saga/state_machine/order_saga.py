@@ -201,7 +201,7 @@ class OrderSaga(object):
                     "address": order_data.get("address")
                 }).encode()
             ),
-            routing_key="check_delivery"
+            routing_key="check.delivery"
         )
         
         logger.info(f"[ORDER] 📤 Verificando entrega para orden {self.order_id}...")
@@ -271,7 +271,7 @@ class OrderSaga(object):
                     "amount": order_data.get("amount")
                 }).encode()
             ),
-            routing_key="return_money"
+            routing_key="return.money"
         )
         
         logger.info(f"[ORDER] 📤 Solicitando devolución de dinero para orden {self.order_id}...")
