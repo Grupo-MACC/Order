@@ -4,8 +4,8 @@
 # Qué hace: Cada estado decide qué hacer cuando recibe un evento
 # (ej: Pending recibe payment_accepted → retorna Paid())
 
-from state import State
-from order_saga import OrderSaga
+from .state import State
+
 import json
 
 
@@ -56,7 +56,7 @@ class Pending(State):
     - NoMoney (si payment_rejected)
     """
 
-    def on_event(self, event, saga: OrderSaga):
+    async def on_event(self, event, saga):
         """
         LÓGICA DE PENDING: ¿Qué hago con cada evento?
         """
@@ -66,11 +66,11 @@ class Pending(State):
             # ✓ Se ejecuta solo UNA VEZ al crear la orden
             
             # Llamar a saga para publicar comando de pago
-            saga.publish_payment_command(event.get('order_data', {}))
+            await saga.publish_payment_command(event.get('order_data', {}))
             # → Publica en exchange 'command' con routing_key 'pay'
             
             # Llamar a saga para escuchar resultado
-            saga.listen_payment_result()
+            await saga.listen_payment_result()
             # → Se suscribe al exchange 'saga' en cola 'payment_result'
             # → Cuando Payment responde, el broker llama saga.on_event() automáticamente
             
@@ -119,7 +119,7 @@ class Paid(State):
     - NotDeliverable (si delivery_not_possible)
     """
 
-    def on_event(self, event, saga: OrderSaga):
+    async def on_event(self, event, saga):
         """
         LÓGICA DE PAID: ¿Qué hago con cada evento?
         
@@ -131,11 +131,11 @@ class Paid(State):
             # ✓ Se ejecuta cuando se entra en este estado
             
             # Llamar a saga para publicar check de delivery
-            saga.publish_delivery_check_command(event.get('order_data', {}))
+            await saga.publish_delivery_check_command(event.get('order_data', {}))
             # → Publica en exchange 'command' con routing_key 'check_delivery'
             
             # Llamar a saga para escuchar resultado
-            saga.listen_delivery_result()
+            await saga.listen_delivery_result()
             # → Se suscribe al exchange 'saga' en cola 'delivery_result'
             # → Cuando Delivery responde, el broker llama saga.on_event() automáticamente
             
@@ -178,7 +178,7 @@ class Confirmed(State):
     - FIN DEL FLUJO
     """
 
-    async def on_event(self, event, saga: OrderSaga):
+    async def on_event(self, event, saga):
         """
         LÓGICA DE CONFIRMED: Estado final de éxito
         
@@ -220,7 +220,7 @@ class NoMoney(State):
     - FIN DEL FLUJO
     """
 
-    async def on_event(self, event, saga: OrderSaga):
+    async def on_event(self, event, saga):
         """
         LÓGICA DE NOMONEY: El pago fue rechazado
         
@@ -266,7 +266,7 @@ class NotDeliverable(State):
     - Returned (si money_returned)
     """
 
-    async def on_event(self, event, saga: OrderSaga):
+    async def on_event(self, event, saga):
         """
         LÓGICA DE NOTDELIVERABLE: Entrega no posible, devolver dinero
         
@@ -278,11 +278,11 @@ class NotDeliverable(State):
             # ✓ Se ejecuta cuando se entra en este estado
             
             # Llamar a saga para publicar comando de devolución
-            saga.publish_return_money_command()
+            await saga.publish_return_money_command()
             # → Publica en exchange 'command' con routing_key 'return_money'
             
             # Llamar a saga para escuchar confirmación
-            saga.listen_money_returned()
+            await saga.listen_money_returned()
             # → Se suscribe al exchange 'saga' en cola 'money_returned'
             # → Cuando Payment confirma, el broker llama saga.on_event() automáticamente
             

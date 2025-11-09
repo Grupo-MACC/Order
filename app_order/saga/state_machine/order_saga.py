@@ -1,4 +1,4 @@
-from my_states import Pending
+from saga.state_machine.my_states import Pending
 import json
 import logging
 from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange_command, declare_exchange_saga, declare_exchange
