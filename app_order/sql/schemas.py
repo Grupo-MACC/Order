@@ -23,7 +23,11 @@ class OrderBase(BaseModel):
         default="No description",
         example="CompanyX order on 2022-01-20"
     )
-
+    address: str = Field(
+        description="Delivery address for the order",
+        default=None,
+        example="123 Industrial Park, Berlin, Germany"
+    )
     #  pieces = relationship("Piece", lazy="joined")
 
 

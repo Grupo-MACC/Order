@@ -16,6 +16,7 @@ class Order(BaseModel):
     description = Column(TEXT, nullable=False, default="No description")
     client_id= Column(Integer, nullable=False)
     status = Column(String(256), nullable=False, default=STATUS_CREATED)
+    address = Column(String(255), nullable=True)  # <-- new field
 
     pieces = relationship("Piece", back_populates="order", lazy="joined")
 

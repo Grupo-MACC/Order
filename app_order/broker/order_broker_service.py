@@ -26,7 +26,11 @@ async def handle_payment_paid(message):
 async def handle_payment_failed(message):
     async with message.process():
         data = json.loads(message.body)
-        logger.info(f"[ORDER] ❌ Pago fallido para orden: {data}")
+        error_message = data["message"]
+        order_id = data["order_id"]
+        status = data["status"]
+        logger.info(f"message: {error_message}")
+        db_order = await order_service.update_order_status(order_id=order_id, status=status)
 
 async def consume_payment_events():
     _, channel = await get_channel()

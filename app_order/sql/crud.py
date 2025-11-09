@@ -15,7 +15,8 @@ async def create_order_from_schema(db: AsyncSession, order, current_user):
     db_order = models.Order(
         number_of_pieces=order.number_of_pieces,
         description=order.description,
-        client_id=current_user
+        client_id=current_user,
+        address=order.address
     )
     db.add(db_order)
     await db.commit()
