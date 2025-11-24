@@ -28,6 +28,7 @@ class OrderBase(BaseModel):
         default=None,
         example="123 Industrial Park, Berlin, Germany"
     )
+    
     #  pieces = relationship("Piece", lazy="joined")
 
 
@@ -38,6 +39,9 @@ class Order(OrderBase):
         description="Primary key/identifier of the order.",
         default=None,
         example=1
+    )
+    pieces: List[int] = Field()
+    user_id: int = Field(
     )
     status: str = Field(
         description="Current status of the order",

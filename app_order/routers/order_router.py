@@ -2,16 +2,18 @@
 """FastAPI router definitions."""
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, status
+import asyncio
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
-from saga.state_machine import order_saga  # importa tu orquestador
-from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db
+from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db, check_public_key
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
 from sql import crud, schemas, models
 from broker import order_broker_service
 from services import order_service
+
+from saga.state_machine.saga_manager import saga_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -26,22 +28,14 @@ router = APIRouter(
 )
 async def health_check():
     """Endpoint to check if everything started correctly."""
-    logger.debug("GET '/' endpoint called.")
-    return {
-        "detail": "OK"
-    }
+    logger.debug("GET '/health' endpoint called.")
+    if check_public_key():
+        return {"detail": "OK"}
+    else:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not available")
 
 @router.post(
     "",
-    response_model=schemas.Order,
-    summary="Create single order",
-    status_code=status.HTTP_201_CREATED,
-    tags=["Order"]
-)
-
-@router.post(
-    "",
-    response_model=schemas.Order,
     summary="Create single order",
     status_code=status.HTTP_201_CREATED,
     tags=["Order"]
@@ -62,34 +56,32 @@ async def create_order(
             db_order = await crud.add_piece_to_order(db, db_order)
 
         logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
+        
+        order_data = schemas.Order(
+            id=db_order.id,
+            user_id=user,
+            number_of_pieces=db_order.number_of_pieces,
+            address=db_order.address,
+            description=db_order.description,
+            pieces=[piece.id for piece in db_order.pieces],
+        )
 
         # 🔹 1️⃣ Crear una nueva saga para esta orden
-        saga = order_saga.OrderSaga(order_id=db_order.id)
-
-        # 🔹 2️⃣ Enviar el evento inicial a la saga
-        event = {
-            "type": "order_created",
-            "order_data": {
-                "order_id": db_order.id,
-                "user_id": user,
-                "number_of_pieces": db_order.number_of_pieces,
-                "address": db_order.address
-            }
+        saga_manager.start_saga(order_data) 
+        return {
+            "order_id": order_data.id,
+            "status": "Pending",
+            "message": "Order received and being processed"
         }
 
-        # 🔹 3️⃣ Procesar el evento
-        await saga.on_event(event)
-
-        return db_order
-
     except Exception as exc:
-        raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating order: {exc}")
+        print(exc)
+        raise HTTPException(409, f"Error creating order: {exc}")
 
 
 
 @router.get(
     "",
-    response_model=List[schemas.Order],
     summary="Retrieve order list",
     tags=["Order", "List"]  # Optional so it appears grouped in documentation
 )
@@ -125,7 +117,7 @@ async def get_single_order(
     logger.debug("GET '/order/%i' endpoint called.", order_id)
     order = await crud.get_order(db, order_id)
     if not order:
-        raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
+        return HTTPException(status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     return order
 
 @router.put(

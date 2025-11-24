@@ -16,7 +16,6 @@ router = APIRouter(
 
 @router.get(
         "/piece_status/{status}",
-        response_model=List[schemas.Piece]
 )
 async def get_piece_list_by_status(
     status: str,
@@ -27,7 +26,6 @@ async def get_piece_list_by_status(
 @router.get(
     "/piece/{piece_id}",
     summary="Retrieve single piece by id",
-    response_model=schemas.Piece,
     tags=['Piece']
 )
 async def get_single_piece(
@@ -36,7 +34,12 @@ async def get_single_piece(
 ):
     """Retrieve single piece by id"""
     print("GET '/piece/%i' endpoint called.", piece_id)
-    return await crud.get_piece(db, piece_id)
+    try:
+        piece = await crud.get_piece(db, piece_id)
+        return piece
+    except Exception as e:
+        print(e)
+        return None
 
 @router.get(
     "/order/{order_id}",

@@ -2,11 +2,11 @@
 """FastAPI router definitions."""
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
-from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db
+from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db, check_public_key
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
 from sql import crud, schemas
 
@@ -22,10 +22,11 @@ router = APIRouter(
 )
 async def health_check():
     """Endpoint to check if everything started correctly."""
-    logger.debug("GET '/' endpoint called.")
-    return {
-        "detail": "OK"
-    }
+    logger.debug("GET '/health' endpoint called.")
+    if check_public_key():
+        return {"detail": "OK"}
+    else:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not available")
 
 @router.get(
     "",

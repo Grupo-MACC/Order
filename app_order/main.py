@@ -8,7 +8,8 @@ from fastapi import FastAPI
 import asyncio
 from routers import order_router, order_router_private, piece_router
 from microservice_chassis_grupo2.sql import database, models
-from broker import order_broker_service, setup_rabbitmq
+from broker import order_broker_service
+from saga.broker_saga import saga_broker_service 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
 logger = logging.getLogger(__name__)
@@ -28,29 +29,32 @@ async def lifespan(__app: FastAPI):
             logger.error(
                 "Could not create tables at startup",
             )
-        '''try:
-            await setup_rabbitmq.setup_rabbitmq()
-        except Exception as e:
-            logger.error(f"Error configurando RabbitMQ: {e}")'''
 
         try:
-            task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
+            #task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
             task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
             task_delivery = asyncio.create_task(order_broker_service.consume_delivery_events())
             task_machine = asyncio.create_task(order_broker_service.consume_machine_events())
-
+            
+            task_payment_saga = asyncio.create_task(saga_broker_service.listen_payment_result())
+            task_delivery_saga = asyncio.create_task(saga_broker_service.listen_delivery_result())
+            tesk_money_return_saga = asyncio.create_task(saga_broker_service.listen_money_returned_result())
         except Exception as e:
-            logger.error(f"Error lanzando payment broker service: {e}")
+            logger.error(f"Error lanzando broker service: {e}")
 
         yield
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
         logger.info("Shutting down rabbitmq")
-        task_payment.cancel()
+        #task_payment.cancel()
         task_delivery.cancel()
         task_machine.cancel()
         task_auth.cancel()
+        
+        task_payment_saga.cancel()
+        task_delivery_saga.cancel()
+        tesk_money_return_saga.cancel()
 
 
 # OpenAPI Documentation ############################################################################
