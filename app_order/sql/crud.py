@@ -71,10 +71,19 @@ async def get_piece_list_by_status(db: AsyncSession, status):
 
     return await get_list_statement_result(db, stmt)
 
+async def get_pieces_by_order(db: AsyncSession, order_id: int):
+    result = await db.execute(
+        select(models.Piece).where(models.Piece.order_id == order_id)
+    )
+    return result.unique().scalars().all()
+
 
 async def update_piece_status(db: AsyncSession, piece_id, status):
     """Persist new piece status on the database."""
-    db_piece = await get_element_by_id(db, models.Piece, piece_id)
+    result = await db.execute(
+        select(models.Piece).where(models.Piece.id == piece_id)
+    )
+    db_piece = result.unique().scalars().first()
     if db_piece is not None:
         db_piece.status = status
         await db.commit()

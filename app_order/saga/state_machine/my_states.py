@@ -1,5 +1,7 @@
 from broker.order_broker_service import publish_do_pieces
 from saga.broker_saga import saga_broker_service
+from services import order_service
+from sql import models
 
 class Pending():
 
@@ -57,6 +59,7 @@ class NoMoney():
     
     async def on_enter(self, saga):
         print(f"✗ Orden {saga.order.id} en estado NoMoney. Fin del flujo.")
+        await order_service.update_order_pieces_status(saga.order.id, models.Piece.STATUS_CANCELLED)
 
 class NotDeliverable():
 
@@ -72,6 +75,7 @@ class NotDeliverable():
     async def on_enter(self, saga):
         print(f"➡️ Orden {saga.order.id} en estado NotDeliverable. Publicando comando de devolución de dinero...")
         await saga_broker_service.publish_return_money_command(saga.order)
+        await order_service.update_order_pieces_status(saga.order.id, models.Piece.STATUS_CANCELLED)
 
 class Returned():
     
