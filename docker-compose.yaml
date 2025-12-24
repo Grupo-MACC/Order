@@ -1,0 +1,9 @@
+services:
+    order:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: order
+        ports:
+            - "5000:5000"
+        restart: on-failure
