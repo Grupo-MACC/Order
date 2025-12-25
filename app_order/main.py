@@ -10,7 +10,7 @@ from routers import order_router, order_router_private, piece_router
 from microservice_chassis_grupo2.sql import database, models
 from broker import order_broker_service
 from saga.broker_saga import saga_broker_service
-from consul_client import create_consul_client
+from microservice_chassis_grupo2.core.consul import create_consul_client
 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
