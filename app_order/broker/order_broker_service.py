@@ -152,8 +152,6 @@ async def handle_auth_events(message):
         data = json.loads(message.body)
         if data["status"] == "running":
             try:
-                with open("/home/pyuser/code/debug.txt", "a") as f:
-                    f.write("Auth is running\n")
                 # Use Consul to discover auth service (no fallback)
                 auth_service_url = await get_service_url("auth")
                 logger.info(f"[ORDER] 🔍 Auth descubierto via Consul: {auth_service_url}")
@@ -164,13 +162,9 @@ async def handle_auth_events(message):
                     )
                     response.raise_for_status()
                     public_key = response.text
-                    with open("/home/pyuser/code/debug.txt", "a") as f:
-                        f.write(f"Public key obtained: {public_key}\n")
                     
                     with open(PUBLIC_KEY_PATH, "w", encoding="utf-8") as f:
                         f.write(public_key)
-                    with open("/home/pyuser/code/debug.txt", "a") as f:
-                        f.write(f"Public key saved to {PUBLIC_KEY_PATH}\n")
                     logger.info(f"[ORDER] ✅ Clave pública de Auth guardada en {PUBLIC_KEY_PATH}")
                     await publish_to_logger(
                         message={
@@ -180,8 +174,6 @@ async def handle_auth_events(message):
                         topic="order.info",
                     )
             except Exception as exc:
-                with open("/home/pyuser/code/debug.txt", "a") as f:
-                    f.write(f"Error obteniendo clave pública de Auth: {exc}\n")
                 logger.error(f"[ORDER] ❌ Error obteniendo clave pública de Auth: {exc}")
                 await publish_to_logger(
                     message={
