@@ -34,10 +34,11 @@ async def lifespan(__app: FastAPI):
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
         except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
-
+            logger.error(f"Could not create tables at startup")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Traceback:", exc_info=True)
+        logger.info("Database tables created")
         try:
             #task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
             task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
