@@ -11,7 +11,11 @@ RUN pip install -r /requirements.txt
 # We will be working on this folder
 WORKDIR /home/pyuser/code
 ENV PYTHONPATH=/home/pyuser/code/app_order
-ENV SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./order.db
+#ENV SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./order.db
+ENV DB_USER=admin
+ENV DB_PASSWORD=maccadmin
+ENV DB_NAME=order_db
+
 ENV RABBITMQ_USER=guest
 ENV RABBITMQ_PASSWORD=guest
 ENV RABBITMQ_HOST=10.0.11.30
