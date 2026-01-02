@@ -20,7 +20,6 @@ async def setup_rabbitmq():
     await order_paid_queue.bind(exchange, routing_key="payment.paid")
     await order_failed_queue.bind(exchange, routing_key="payment.failed")
     await delivery_ready_queue.bind(exchange, routing_key="delivery.ready")
-    # await pieces_done_queue.bind(exchange, routing_key="piece.done")
     await piece_date_queue.bind(exchange, routing_key="piece.date")
 
 

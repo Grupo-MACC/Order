@@ -2,11 +2,12 @@
 """FastAPI router definitions."""
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from microservice_chassis_grupo2.core.dependencies import get_db
+# from microservice_chassis_grupo2.core.dependencies import get_db
 from sql import crud, schemas
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
+from dependencies import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -14,32 +15,25 @@ router = APIRouter(
     tags=["Order", "Private"]
 )
 
-@router.get(
-        "/piece_status/{status}",
-)
-async def get_piece_list_by_status(
-    status: str,
-    db: AsyncSession = Depends(get_db)
-):
-    return await crud.get_piece_list_by_status(db=db, status=status)
+@router.get("/piece_status/{status}")
+async def deprecated_piece_list_by_status(status: str):
+    """
+    Endpoint legacy: Order ya no gestiona piezas individuales.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Deprecated: Order ya no expone piezas individuales. Consulta Warehouse.",
+    )
 
-@router.get(
-    "/piece/{piece_id}",
-    summary="Retrieve single piece by id",
-    tags=['Piece']
-)
-async def get_single_piece(
-        piece_id: int,
-        db: AsyncSession = Depends(get_db),
-):
-    """Retrieve single piece by id"""
-    print("GET '/piece/%i' endpoint called.", piece_id)
-    try:
-        piece = await crud.get_piece(db, piece_id)
-        return piece
-    except Exception as e:
-        print(e)
-        return None
+@router.get("/piece/{piece_id}")
+async def deprecated_get_piece(piece_id: int):
+    """
+    Endpoint legacy: Order ya no gestiona piezas individuales.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Deprecated: Order ya no expone piezas individuales. Consulta Warehouse.",
+    )
 
 @router.get(
     "/order/{order_id}",
