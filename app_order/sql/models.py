@@ -1,74 +1,88 @@
 # -*- coding: utf-8 -*-
-"""Clases Pydantic para Request/Response.
+"""Database models definitions.
 
-Puntos clave del refactor:
-    - Se elimina el modelo de `Piece` (order ya no gestiona piezas individuales).
-    - Se introduce el modelo de piezas por cantidad: `pieces_a` y `pieces_b`.
-    - Se añade un DTO mínimo para publicar a warehouse: `WarehouseOrderCommand`.
+Este microservicio **order** ya no gestiona piezas individuales.
 
-Nota:
-    - El `number_of_pieces` se calcula como (pieces_a + pieces_b) al persistir.
-      Lo mantenemos en respuestas para compatibilidad y para facilitar cálculos
-      en otros microservicios (pago, métricas, etc.).
+Resumen del cambio:
+    - Antes: order creaba `Piece` (tabla `piece`) y publicaba `do.pieces` hacia machine.
+    - Ahora: warehouse gestiona stock + fabricación y habla con machine.
+
+Decisión de diseño:
+    - Order solo almacena el pedido (cantidades) y estados.
+    - Warehouse recibe un comando mínimo con:
+        * order_id
+        * number_of_pieces
+        * pieces_a
+        * pieces_b
+
+Notas sobre estados:
+    - Para no pisarte el estado cuando entren eventos de distintos procesos,
+      separo los estados en tres campos:
+        * creation_status: saga de creación (pago + delivery-check)
+        * manufacturing_status: lo que reporte warehouse
+        * delivery_status: lo que reporte delivery
+
+    - Dejo `status` como campo "legacy" (si ya hay consumidores externos).
+      Si no lo necesitas, puedes eliminarlo y simplificar.
 """
 
-from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy import Column, Integer, String, TEXT
+from microservice_chassis_grupo2.sql.models import BaseModel
 
 
-class Message(BaseModel):
-    """Esquema genérico de mensaje."""
-    detail: Optional[str] = Field(example="error or success message")
+class Order(BaseModel):
+    """Order database table representation."""
 
+    __tablename__ = "manufacturing_order"
 
-class OrderBase(BaseModel):
-    """Campos base de una Order."""
-    pieces_a: int = Field(description="Cantidad de piezas tipo A a fabricar", ge=0, example=3, default=0)
-    pieces_b: int = Field(description="Cantidad de piezas tipo B a fabricar", ge=0, example=2, default=0)
-    description: str = Field(description="Descripción humana del pedido", default="No description", example="Pedido A/B")
-    address: Optional[str] = Field(description="Dirección de entrega", default=None, example="Calle X, España")
+    # Estados (constantes recomendadas para evitar strings mágicos).
+    CREATION_PENDING = "Pending"
+    CREATION_PAID = "Paid"
+    CREATION_CONFIRMED = "Confirmed"
+    CREATION_NO_MONEY = "NoMoney"
+    CREATION_NOT_DELIVERABLE = "NotDeliverable"
+    CREATION_RETURNED = "Returned"
 
+    MFG_NOT_STARTED = "NotStarted"
+    MFG_REQUESTED = "Requested"
+    MFG_IN_PROGRESS = "InProgress"
+    MFG_COMPLETED = "Completed"
+    MFG_FAILED = "Failed"
 
-class OrderPost(OrderBase):
-    """Schema de entrada para crear un pedido."""
+    DELIVERY_NOT_STARTED = "NotStarted"
+    DELIVERY_READY = "Ready"
+    DELIVERY_DELIVERED = "Delivered"
+    DELIVERY_FAILED = "Failed"
 
+    id = Column(Integer, primary_key=True)
 
-class Order(OrderBase):
-    """Schema de salida para un pedido."""
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    # Identidad del cliente/usuario (del token auth).
+    client_id = Column(Integer, nullable=False)
 
-    id: int = Field(description="Id del pedido", example=1)
-    user_id: int = Field(
-        description="Id del usuario/cliente (auth)",
-        example=7,
-        validation_alias="client_id",
-        serialization_alias="user_id",
-    )
+    # Datos de negocio.
+    description = Column(TEXT, nullable=False, default="No description")
+    address = Column(String(255), nullable=True)
 
-    number_of_pieces: int = Field(description="Total de piezas (A+B)", example=5)
+    # Cantidades de piezas (nuevo modelo A/B).
+    pieces_a = Column(Integer, nullable=False, default=0)
+    pieces_b = Column(Integer, nullable=False, default=0)
 
-    creation_status: str = Field(description="Estado creación (saga)", example="Paid")
-    manufacturing_status: str = Field(description="Estado fabricación (warehouse)", example="Requested")
-    delivery_status: str = Field(description="Estado entrega (delivery)", example="NotStarted")
+    # Total redundante (A+B). Útil si otros servicios calculan importe con esto.
+    number_of_pieces = Column(Integer, nullable=False, default=0)
 
+    # Estados por fase.
+    creation_status = Column(String(64), nullable=False, default=CREATION_PENDING)
+    manufacturing_status = Column(String(64), nullable=False, default=MFG_NOT_STARTED)
+    delivery_status = Column(String(64), nullable=False, default=DELIVERY_NOT_STARTED)
 
-class OrderStatusResponse(BaseModel):
-    """Respuesta del endpoint /order/{id}/status."""
-    order_id: int = Field(example=1)
-    creation_status: str = Field(example="Confirmed")
-    manufacturing_status: str = Field(example="Requested")
-    delivery_status: str = Field(example="NotStarted")
-    overall_status: str = Field(example="Manufacturing:Requested")
+    # Campo legacy (opcional). Manténlo hasta que migres consumidores.
+    status = Column(String(256), nullable=False, default="Created")
 
+    def as_dict(self):
+        """Return the order item as dict.
 
-class WarehouseOrderCommand(BaseModel):
-    """DTO mínimo publicado hacia warehouse.
-
-    Importante:
-        Warehouse NO necesita description/address/user_id para fabricar/stock.
-        Solo necesita order_id y cantidades.
-    """
-    order_id: int
-    number_of_pieces: int
-    pieces_a: int
-    pieces_b: int
+        Nota:
+            BaseModel.as_dict() ya incluye todas las columnas del modelo.
+            Aquí no añadimos nada extra (antes se añadían `pieces`).
+        """
+        return super().as_dict()
