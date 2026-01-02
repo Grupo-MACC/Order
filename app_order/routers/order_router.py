@@ -3,7 +3,7 @@
 import logging
 from typing import List
 import asyncio
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
@@ -19,6 +19,45 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/order"
 )
+
+
+
+@router.post("/test")
+async def debug_publish_warehouse(order: dict | None = Body(default=None)):
+    """Test: publica una order a Warehouse.
+    
+    - Si envías JSON en el body, publica ese JSON.
+    - Si no envías body, publica una order por defecto.
+    - Si falta order_date, la rellena.
+
+    curl -X POST http://localhost:5000/order/test   -H "Content-Type: application/json"   -d '{
+        "order_id": 777,
+        "lines": [
+        {"piece_type": "A", "quantity": 3},
+        {"piece_type": "B", "quantity": 2}
+        ]
+    }'
+    """
+    from broker.order_broker_service import publish_order_to_warehouse
+    from datetime import datetime, timezone
+
+    default_order = {
+        "order_id": 123,
+        "order_date": "2025-12-23T10:15:00Z",
+        "lines": [
+            {"piece_type": "A", "quantity": 2},
+            {"piece_type": "B", "quantity": 1},
+        ],
+    }
+
+    payload = order or default_order
+
+    if "order_date" not in payload or not payload["order_date"]:
+        payload["order_date"] = datetime.now(timezone.utc).isoformat()
+
+    await publish_order_to_warehouse(payload)
+    return {"detail": "Published to warehouse", "order": payload}
+
 
 
 @router.get(

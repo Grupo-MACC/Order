@@ -95,6 +95,7 @@ async def handle_pieces_done(message):
         data = json.loads(message.body)
         #order_id  = data["order_id"]
         piece_id = data["piece_id"]
+        type = data["type"]
         status = data["status"]
         await order_service.update_piece_status(piece_id, status)
 
@@ -108,16 +109,16 @@ async def handle_pieces_date(message):
 async def consume_machine_events():
     _, channel = await get_channel()
     
-    exchange = await declare_exchange(channel)
-    pieces_done_queue   = await channel.declare_queue("pieces_done_queue", durable=True)
-    piece_date_queue  = await channel.declare_queue("piece_date_queue", durable=True)
-    await pieces_done_queue.bind(exchange, routing_key="piece.done")
-    await piece_date_queue.bind(exchange, routing_key="piece.date")
-    await pieces_done_queue.consume(handle_pieces_done)
-    await piece_date_queue.consume(handle_pieces_date)
+    # exchange = await declare_exchange(channel)
+    # pieces_done_queue   = await channel.declare_queue("pieces_done_queue", durable=True)
+    # piece_date_queue  = await channel.declare_queue("piece_date_queue", durable=True)
+    # await pieces_done_queue.bind(exchange, routing_key="piece.done")
+    # await piece_date_queue.bind(exchange, routing_key="piece.date")
+    # await pieces_done_queue.consume(handle_pieces_done)
+    # await piece_date_queue.consume(handle_pieces_date)
     logger.info("[ORDER] 🟢 Escuchando piece.done …")
-    await publish_to_logger(message={"message":"🟢 Escuchando eventos de machine"},topic="order.info")
-    import asyncio; await asyncio.Future()
+    # await publish_to_logger(message={"message":"🟢 Escuchando eventos de machine"},topic="order.info")
+    # import asyncio; await asyncio.Future()
 
 async def publish_do_pieces(order_id: int, piece_ids: list[str]):
     connection, channel = await get_channel()
@@ -211,3 +212,38 @@ async def publish_to_logger(message, topic):
     finally:
         if connection:
             await connection.close()
+
+
+async def publish_order_to_warehouse(order_payload: dict) -> None:
+    """Publica una order (completa) para que Warehouse la procese.
+
+    Args:
+        order_payload:
+            Diccionario JSON con el contrato acordado, por ejemplo:
+            {
+              "order_id": 123,
+              "order_date": "...ISO...",
+              "lines":[{"piece_type":"A","quantity":2}, ...]
+            }
+
+    Notas:
+        - delivery_mode=2 hace el mensaje persistente (si la cola es durable).
+        - Este publisher NO declara colas. Eso debe hacerlo Warehouse en su setup.
+    """
+    logger.info("[ORDER] About to publish to routing_key=%s", "warehouse.order")
+    connection, channel = await get_channel()
+    try:
+        exchange = await declare_exchange(channel)
+
+        body = json.dumps(order_payload).encode("utf-8")
+        msg = Message(
+            body=body,
+            content_type="application/json",
+            delivery_mode=2,  # persistente
+        )
+
+        await exchange.publish(message=msg, routing_key="warehouse.order")#order.created
+        logger.info("[ORDER] Published OK")
+
+    finally:
+        await connection.close()
