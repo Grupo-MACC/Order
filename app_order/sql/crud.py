@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Functions that interact with the database."""
+"""Funciones CRUD (DB) del microservicio order.
+
+Cambios clave:
+    - Eliminamos todas las operaciones sobre `Piece`.
+    - La Order ahora almacena cantidades de A/B y total.
+    - Añadimos updates de estados por fase (creation/mfg/delivery).
+"""
+
 import logging
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from . import models
@@ -9,147 +15,85 @@ from . import models
 logger = logging.getLogger(__name__)
 
 
-# order functions ##################################################################################
 async def create_order_from_schema(db: AsyncSession, order, current_user):
-    """Persist a new order into the database."""
+    """Persist a new order into the database.
+
+    Nota:
+        - Calculamos number_of_pieces = pieces_a + pieces_b.
+    """
+    total = int(order.pieces_a) + int(order.pieces_b)
+
     db_order = models.Order(
-        number_of_pieces=order.number_of_pieces,
-        description=order.description,
         client_id=current_user,
-        address=order.address
+        description=order.description,
+        address=order.address,
+        pieces_a=int(order.pieces_a),
+        pieces_b=int(order.pieces_b),
+        number_of_pieces=total,
+        creation_status=models.Order.CREATION_PENDING,
+        manufacturing_status=models.Order.MFG_NOT_STARTED,
+        delivery_status=models.Order.DELIVERY_NOT_STARTED,
+        status=models.Order.CREATION_PENDING,  # legacy sync opcional
     )
+
     db.add(db_order)
     await db.commit()
     await db.refresh(db_order)
     return db_order
 
-async def add_piece_to_order(db: AsyncSession, order):
-    """Creates piece and adds it to order."""
-    piece = models.Piece()
-    piece.order = order
-    db.add(piece)
-    await db.commit()
-    await db.refresh(order)
-    return order
-
 
 async def get_order_list(db: AsyncSession):
-    """Load all the orders from the database."""
-    return await get_list(db, models.Order)
-
-
-async def get_order(db: AsyncSession, order_id):
-    """Load an order from the database."""
-    stmt = select(models.Order).join(models.Order.pieces).where(models.Order.id == order_id)
-    order = await get_element_statement_result(db, stmt)
-    return order
-
-
-async def delete_order(db: AsyncSession, order_id):
-    """Delete order from the database."""
-    return await delete_element_by_id(db, models.Order, order_id)
-
-
-async def update_order_status(db: AsyncSession, order_id, status) -> models.Order:
-    """Persist new order status on the database."""
-    db_order = await get_element_by_id(db, models.Order, order_id)
-    if db_order is not None:
-        db_order.status = status
-        await db.commit()
-        await db.refresh(db_order)
-    return db_order
-
-
-# Piece functions ##################################################################################
-async def get_piece_list_by_status(db: AsyncSession, status):
-    """Get all pieces with a given status from the database."""
-    # query = db.query(models.Piece).filter_by(status=status)
-    # return query.all()
-    stmt = select(models.Piece).where(models.Piece.status == status)
-    # result = await db.execute(stmt)
-    # item_list = result.scalars().all()
-
-    return await get_list_statement_result(db, stmt)
-
-async def get_pieces_by_order(db: AsyncSession, order_id: int):
-    result = await db.execute(
-        select(models.Piece).where(models.Piece.order_id == order_id)
-    )
+    """Load all orders."""
+    result = await db.execute(select(models.Order))
     return result.unique().scalars().all()
 
 
-async def update_piece_status(db: AsyncSession, piece_id, status):
-    """Persist new piece status on the database."""
-    result = await db.execute(
-        select(models.Piece).where(models.Piece.id == piece_id)
-    )
-    db_piece = result.unique().scalars().first()
-    if db_piece is not None:
-        db_piece.status = status
-        await db.commit()
-        await db.refresh(db_piece)
-    return db_piece
+async def get_order(db: AsyncSession, order_id: int):
+    """Load single order."""
+    result = await db.execute(select(models.Order).where(models.Order.id == order_id))
+    return result.scalar_one_or_none()
 
 
-async def update_piece_manufacturing_date_to_now(db: AsyncSession, piece_id):
-    """For a given piece_id, sets piece's manufacturing_date to current datetime."""
-    db_piece = await get_element_by_id(db, models.Piece, piece_id)
-    if db_piece is not None:
-        db_piece.manufacturing_date = datetime.now()
-        await db.commit()
-        await db.refresh(db_piece)
-    return db_piece
-
-
-async def get_piece_list(db: AsyncSession):
-    """Load all the orders from the database."""
-    stmt = select(models.Piece).join(models.Piece.order)
-    pieces = await get_list_statement_result(db, stmt)
-    return pieces
-
-
-async def get_piece(db: AsyncSession, piece_id):
-    """Load a piece from the database."""
-    return await get_element_by_id(db, models.Piece, piece_id)
-
-
-# Generic functions ################################################################################
-# READ
-async def get_list(db: AsyncSession, model):
-    """Retrieve a list of elements from database"""
-    result = await db.execute(select(model))
-    item_list = result.unique().scalars().all()
-    return item_list
-
-
-async def get_list_statement_result(db: AsyncSession, stmt):
-    """Execute given statement and return list of items."""
-    result = await db.execute(stmt)
-    item_list = result.unique().scalars().all()
-    return item_list
-
-
-async def get_element_statement_result(db: AsyncSession, stmt):
-    """Execute statement and return a single items"""
-    result = await db.execute(stmt)
-    item = result.scalar()
-    return item
-
-
-async def get_element_by_id(db: AsyncSession, model, element_id):
-    """Retrieve any DB element by id."""
-    if element_id is None:
-        return None
-
-    element = await db.get(model, element_id)
-    return element
-
-
-# DELETE
-async def delete_element_by_id(db: AsyncSession, model, element_id):
-    """Delete any DB element by id."""
-    element = await get_element_by_id(db, model, element_id)
+async def delete_order(db: AsyncSession, order_id: int):
+    """Delete order."""
+    element = await db.get(models.Order, order_id)
     if element is not None:
         await db.delete(element)
         await db.commit()
     return element
+
+
+async def update_order_creation_status(db: AsyncSession, order_id: int, status: str):
+    """Update creation_status (saga creación)."""
+    db_order = await db.get(models.Order, order_id)
+    if db_order is None:
+        return None
+    db_order.creation_status = status
+    db_order.status = status  # legacy sync opcional
+    await db.commit()
+    await db.refresh(db_order)
+    return db_order
+
+
+async def update_order_manufacturing_status(db: AsyncSession, order_id: int, status: str):
+    """Update manufacturing_status (warehouse)."""
+    db_order = await db.get(models.Order, order_id)
+    if db_order is None:
+        return None
+    db_order.manufacturing_status = status
+    db_order.status = status  # legacy sync opcional
+    await db.commit()
+    await db.refresh(db_order)
+    return db_order
+
+
+async def update_order_delivery_status(db: AsyncSession, order_id: int, status: str):
+    """Update delivery_status (delivery)."""
+    db_order = await db.get(models.Order, order_id)
+    if db_order is None:
+        return None
+    db_order.delivery_status = status
+    db_order.status = status  # legacy sync opcional
+    await db.commit()
+    await db.refresh(db_order)
+    return db_order

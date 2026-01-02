@@ -3,12 +3,13 @@
 import logging
 from typing import List
 import asyncio
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
-from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db, check_public_key
+from microservice_chassis_grupo2.core.dependencies import get_current_user, check_public_key
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
+from dependencies import get_db
 from sql import crud, schemas, models
 from broker import order_broker_service
 from services import order_service
@@ -19,6 +20,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/order"
 )
+
+
+@router.post("/test")
+async def debug_publish_warehouse(order: dict | None = Body(default=None)):
+    """Test: publica una order a Warehouse.
+    
+    - Si envías JSON en el body, publica ese JSON.
+    - Si no envías body, publica una order por defecto.
+    - Si falta order_date, la rellena.
+
+    curl -X POST http://localhost:5000/order/test   -H "Content-Type: application/json"   -d '{
+        "order_id": 777,
+        "lines": [
+        {"piece_type": "A", "quantity": 3},
+        {"piece_type": "B", "quantity": 2}
+        ]
+    }'
+    """
+    from broker.order_broker_service import publish_order_to_warehouse
+    from datetime import datetime, timezone
+
+    default_order = {
+        "order_id": 123,
+        "order_date": "2025-12-23T10:15:00Z",
+        "lines": [
+            {"piece_type": "A", "quantity": 2},
+            {"piece_type": "B", "quantity": 1},
+        ],
+    }
+
+    payload = order or default_order
+
+    if "order_date" not in payload or not payload["order_date"]:
+        payload["order_date"] = datetime.now(timezone.utc).isoformat()
+
+    await publish_order_to_warehouse(payload)
+    return {"detail": "Published to warehouse", "order": payload}
+
 
 
 @router.get(
@@ -34,52 +73,50 @@ async def health_check():
     else:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not available")
 
+#region POST /order
 @router.post(
     "",
     summary="Create single order",
     status_code=status.HTTP_201_CREATED,
-    tags=["Order"]
+    tags=["Order"],
 )
 async def create_order(
     order_schema: schemas.OrderPost,
     db: AsyncSession = Depends(get_db),
-    user: int = Depends(get_current_user)
+    user: int = Depends(get_current_user),
 ):
-    """Create a single order with its pieces and notify the machine service."""
-    logger.info("Request received to create order with %d pieces.", order_schema.number_of_pieces)
+    """
+    Crea una order (cantidades A/B) y arranca el SAGA de confirmación.
+
+    Importante:
+        - Aquí NO se dispara fabricación.
+        - La fabricación se dispara cuando el SAGA alcanza Confirmed.
+    """
+    if int(order_schema.pieces_a) == 0 and int(order_schema.pieces_b) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Debes solicitar al menos 1 pieza (A o B).",
+        )
 
     try:
         db_order = await crud.create_order_from_schema(db, order_schema, user)
 
-        # Añadir piezas
-        for _ in range(order_schema.number_of_pieces):
-            db_order = await crud.add_piece_to_order(db, db_order)
+        # DTO para la saga (Pydantic desde ORM)
+        order_dto = schemas.Order.model_validate(db_order)
 
-        logger.info("Order %s created successfully with %d pieces.", db_order.id, len(db_order.pieces))
-        
-        order_data = schemas.Order(
-            id=db_order.id,
-            user_id=user,
-            number_of_pieces=db_order.number_of_pieces,
-            address=db_order.address,
-            description=db_order.description,
-            pieces=[piece.id for piece in db_order.pieces],
-        )
+        saga_manager.start_saga(order_dto)
 
-        # 🔹 1️⃣ Crear una nueva saga para esta orden
-        saga_manager.start_saga(order_data) 
         return {
-            "order_id": order_data.id,
-            "status": "Pending",
-            "message": "Order received and being processed"
+            "order_id": db_order.id,
+            "creation_status": db_order.creation_status,
+            "message": "Order received and being processed",
         }
-
+    except HTTPException:
+        raise
     except Exception as exc:
-        print(exc)
-        raise HTTPException(409, f"Error creating order: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error creating order: {exc}")
 
-
-
+#region GET /order
 @router.get(
     "",
     summary="Retrieve order list",
@@ -94,6 +131,7 @@ async def get_order_list(
     order_list = await crud.get_order_list(db)
     return order_list
 
+#region GET /order/{order_id}
 @router.get(
     "/{order_id}",
     summary="Retrieve single order by id",
@@ -120,6 +158,36 @@ async def get_single_order(
         return HTTPException(status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     return order
 
+
+#region GET /order/status/id
+@router.get(
+    "/{order_id}/status",
+    summary="Retrieve order status (creation/manufacturing/delivery)",
+    response_model=schemas.OrderStatusResponse,
+    tags=["Order"],
+)
+async def get_order_status(
+    order_id: int,
+    user: int = Depends(get_current_user),
+):
+    """
+    Devuelve el estado por fases.
+    """
+    order = await order_service.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+
+    overall = order_service.compute_overall_status(order)
+
+    return schemas.OrderStatusResponse(
+        order_id=order.id,
+        creation_status=order.creation_status,
+        manufacturing_status=order.manufacturing_status,
+        delivery_status=order.delivery_status,
+        overall_status=overall,
+    )
+
+#region PUT /order/status/id
 @router.put(
     "/status/{order_id}"
 )

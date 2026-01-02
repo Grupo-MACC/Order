@@ -1,4 +1,4 @@
-from broker.order_broker_service import publish_do_pieces
+from broker.order_broker_service import publish_do_order
 from saga.broker_saga import saga_broker_service
 from services import order_service
 from sql import models
@@ -49,8 +49,29 @@ class Confirmed():
         return self
     
     async def on_enter(self, saga):
-        print(f"➡️ Orden {saga.order.id} en estado Confirmed. Publicando evento 'payment.paid'...")
-        await publish_do_pieces(saga.order.id, [str(piece) for piece in saga.order.pieces])
+        """
+        La order está confirmada (pago OK + delivery-check OK).
+
+        A partir de aquí:
+            - Order NO habla con Machine.
+            - Order publica comando mínimo a Warehouse.
+        """
+        print(f"➡️ Orden {saga.order.id} en estado Confirmed. Publicando do.order a Warehouse...")
+
+        # Marca fabricación como solicitada (opcional pero útil para UI inmediata)
+        from services import order_service
+        await order_service.update_order_manufacturing_status(
+            order_id=saga.order.id,
+            status=models.Order.MFG_REQUESTED,
+        )
+
+        # Publica comando mínimo (warehouse fabricará / consumirá stock)
+        await publish_do_order(
+            order_id=saga.order.id,
+            number_of_pieces=saga.order.number_of_pieces,
+            pieces_a=saga.order.pieces_a,
+            pieces_b=saga.order.pieces_b,
+        )
 
 class NoMoney():
 
@@ -58,8 +79,10 @@ class NoMoney():
         return self
     
     async def on_enter(self, saga):
+        """
+        Flujo de error de pago: no hay fabricación.
+        """
         print(f"✗ Orden {saga.order.id} en estado NoMoney. Fin del flujo.")
-        await order_service.update_order_pieces_status(saga.order.id, models.Piece.STATUS_CANCELLED)
 
 class NotDeliverable():
 
@@ -73,9 +96,10 @@ class NotDeliverable():
         return self
 
     async def on_enter(self, saga):
-        print(f"➡️ Orden {saga.order.id} en estado NotDeliverable. Publicando comando de devolución de dinero...")
+        """ Si no se puede entregar, devolvemos dinero y no fabricamos.
+        """
+        print(f"➡️ Orden {saga.order.id} en estado NotDeliverable. Solicitando devolución de dinero...")
         await saga_broker_service.publish_return_money_command(saga.order)
-        await order_service.update_order_pieces_status(saga.order.id, models.Piece.STATUS_CANCELLED)
 
 class Returned():
     
