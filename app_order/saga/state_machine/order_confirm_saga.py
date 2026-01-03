@@ -1,4 +1,4 @@
-from saga.state_machine.my_states import Pending
+from saga.state_machine.order_confirm_states import Pending
 import logging
 from services.order_service import update_order_creation_status
 

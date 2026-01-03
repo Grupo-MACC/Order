@@ -1,5 +1,5 @@
 from broker.order_broker_service import publish_do_order
-from saga.broker_saga import saga_broker_service
+from saga.broker_saga import saga_broker_order_confirm
 from services import order_service
 from sql import models
 
@@ -19,7 +19,7 @@ class Pending():
 
     async def on_enter(self, saga):
         print(f"➡️ Orden {saga.order.id} en estado Pending. Publicando comando de pago...")
-        await saga_broker_service.publish_payment_command(saga.order)
+        await saga_broker_order_confirm.publish_payment_command(saga.order)
 
 class Paid():
 
@@ -37,7 +37,7 @@ class Paid():
 
     async def on_enter(self, saga):
         print(f"➡️ Orden {saga.order.id} en estado Paid. Publicando comando de verificación de entrega...")
-        await saga_broker_service.publish_delivery_check_command(saga.order)
+        await saga_broker_order_confirm.publish_delivery_check_command(saga.order)
 
 class Confirmed():
 
@@ -99,7 +99,7 @@ class NotDeliverable():
         """ Si no se puede entregar, devolvemos dinero y no fabricamos.
         """
         print(f"➡️ Orden {saga.order.id} en estado NotDeliverable. Solicitando devolución de dinero...")
-        await saga_broker_service.publish_return_money_command(saga.order)
+        await saga_broker_order_confirm.publish_return_money_command(saga.order)
 
 class Returned():
     
