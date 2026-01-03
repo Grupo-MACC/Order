@@ -50,3 +50,14 @@ async def get_order_by_id(order_id: int) -> Optional[models.Order]:
     """Obtiene una order por id."""
     async for db in get_db():
         return await crud.get_order(db=db, order_id=order_id)
+
+async def create_cancel_saga(saga_id: str, order_id: int, state: str) -> Optional[models.CancelSaga]:
+    """Crea una saga de cancelación en BD."""
+    async for db in get_db():
+        return await crud.create_cancel_saga(db=db, saga_id=saga_id, order_id=order_id, state=state)
+
+
+async def update_cancel_saga(saga_id: str, state: str, error: str | None = None) -> Optional[models.CancelSaga]:
+    """Actualiza el estado interno de la saga de cancelación."""
+    async for db in get_db():
+        return await crud.update_cancel_saga(db=db, saga_id=saga_id, state=state, error=error)

@@ -97,3 +97,37 @@ async def update_order_delivery_status(db: AsyncSession, order_id: int, status: 
     await db.commit()
     await db.refresh(db_order)
     return db_order
+
+async def create_cancel_saga(db: AsyncSession, saga_id: str, order_id: int, state: str):
+    """Crea el registro persistente de una saga de cancelación."""
+    db_saga = models.CancelSaga(
+        saga_id=str(saga_id),
+        order_id=int(order_id),
+        state=str(state),
+        error=None,
+    )
+    db.add(db_saga)
+    await db.commit()
+    await db.refresh(db_saga)
+    return db_saga
+
+
+async def get_cancel_saga(db: AsyncSession, saga_id: str):
+    """Obtiene una saga de cancelación por saga_id."""
+    result = await db.execute(
+        select(models.CancelSaga).where(models.CancelSaga.saga_id == str(saga_id))
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_cancel_saga(db: AsyncSession, saga_id: str, state: str, error: str | None = None):
+    """Actualiza el estado y/o error de una saga de cancelación."""
+    db_saga = await db.get(models.CancelSaga, str(saga_id))
+    if db_saga is None:
+        return None
+    db_saga.state = str(state)
+    if error is not None:
+        db_saga.error = str(error)
+    await db.commit()
+    await db.refresh(db_saga)
+    return db_saga
