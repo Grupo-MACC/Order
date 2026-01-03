@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """FastAPI router definitions."""
-import logging
+import logging, uuid, os
 from typing import List
 import asyncio
 from fastapi import APIRouter, Depends, status, HTTPException, Body
@@ -15,6 +15,7 @@ from broker import order_broker_service
 from services import order_service
 
 from saga.state_machine.order_confirm_saga_manager import saga_manager
+from saga.state_machine.order_cancel_saga_manager import cancel_saga_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -236,3 +237,78 @@ async def remove_order_by_id(
     if not order:
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     return await crud.delete_order(db, order_id)
+
+#region POST /order/id/cancel
+@router.post(
+    "/{order_id}/cancel",
+    summary="Cancel order while manufacturing (starts cancel SAGA)",
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Order"],
+)
+async def cancel_order_in_manufacturing(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: int = Depends(get_current_user),
+):
+    """Inicia el SAGA de cancelación en fabricación.
+
+    Validación (según informe):
+        - Debe estar pagado y en fabricación:contentReference[oaicite:3]{index=3}
+        - Si no, se rechaza sin iniciar la saga
+
+    Efecto:
+        - Pasa manufacturing_status a Canceling
+        - Publica cmd.cancel_manufacturing a Warehouse
+        - Continúa por eventos (evt.manufacturing_canceled → cmd.refund → refund.result)
+    """
+    db_order = await crud.get_order(db, order_id)
+    if not db_order:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+
+    # Seguridad mínima: solo dueño o el admin puede cancelar
+    ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "1"))
+
+    is_admin = int(user) == ADMIN_USER_ID
+    is_owner = int(db_order.client_id) == int(user)
+
+    if not (is_admin or is_owner):
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot cancel orders from another user",
+        )
+
+    # Validación de cancelabilidad:
+    # - Pago confirmado por la saga de creación
+    # - Fabricación en curso (Requested o InProgress)
+    if db_order.creation_status != models.Order.CREATION_CONFIRMED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order not cancelable: creation_status={db_order.creation_status}",
+        )
+
+    if db_order.manufacturing_status not in {models.Order.MFG_REQUESTED, models.Order.MFG_IN_PROGRESS}:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order not cancelable: manufacturing_status={db_order.manufacturing_status}",
+        )
+
+    # Evitar duplicados (si ya está cancelando o finalizada)
+    if db_order.manufacturing_status in {models.Order.MFG_CANCELING, models.Order.MFG_CANCELED, models.Order.MFG_CANCEL_PENDING_REFUND}:
+        raise HTTPException(status_code=409, detail="Cancel already requested or finished")
+
+    saga_id = str(uuid.uuid4())
+
+    # Persistimos saga + ponemos estado intermedio CANCELING (evita carreras):contentReference[oaicite:4]{index=4}
+    await crud.create_cancel_saga(db, saga_id=saga_id, order_id=db_order.id, state="Canceling")
+    await crud.update_order_manufacturing_status(db, order_id=db_order.id, status=models.Order.MFG_CANCELING)
+
+    # Arrancamos saga en memoria
+    order_dto = schemas.Order.model_validate(db_order)
+    cancel_saga_manager.start_saga(order=order_dto, saga_id=saga_id)
+
+    return {
+        "detail": "Cancel SAGA started",
+        "order_id": db_order.id,
+        "saga_id": saga_id,
+        "manufacturing_status": models.Order.MFG_CANCELING,
+    }
