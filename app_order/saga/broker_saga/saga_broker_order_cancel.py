@@ -22,13 +22,18 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
 
 logger = logging.getLogger(__name__)
 
+
+# =========================
+# Routing keys
+# =========================
 RK_CMD_CANCEL_MFG = "cmd.cancel_manufacturing"
 RK_EVT_MFG_CANCELED = "evt.manufacturing_canceled"
 
 RK_CMD_REFUND = "cmd.refund"
-RK_EVT_REFUND_RESULT = "refund.result"
+RK_EVT_REFUND_EVENTS = ("refund.result", "evt_refunded", "evt_refund_failed")
 
 
+# region Publishers
 async def publish_cancel_manufacturing_command(order_id: int, saga_id: str):
     """Ordena a Warehouse cancelar la fabricación de un pedido."""
     connection, channel = await get_channel()
@@ -54,7 +59,7 @@ async def publish_refund_command(order_id: int, user_id: int, saga_id: str):
     finally:
         await connection.close()
 
-
+# region Consumers
 async def _handle_evt_mfg_canceled(message):
     """Traduce evt.manufacturing_canceled a evento interno del CancelSaga."""
     async with message.process():
@@ -116,8 +121,8 @@ async def listen_refund_result():
     exchange = await declare_exchange_saga(channel)
 
     queue = await channel.declare_queue("refund_result_queue", durable=True)
-    await queue.bind(exchange, routing_key=RK_EVT_REFUND_RESULT)
+    await queue.bind(exchange, routing_key=RK_EVT_REFUND_EVENTS)
     await queue.consume(_handle_refund_result)
 
-    logger.info("[ORDER] 🟢 Escuchando %s", RK_EVT_REFUND_RESULT)
+    logger.info("[ORDER] 🟢 Escuchando %s", RK_EVT_REFUND_EVENTS)
     await asyncio.Future()
