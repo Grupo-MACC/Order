@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 import asyncio
-from routers import order_router, order_router_private, piece_router
+from routers import order_router, order_router_private
 from microservice_chassis_grupo2.sql import database, models
 from broker import order_broker_service
-from saga.broker_saga import saga_broker_service
+from saga.broker_saga import saga_broker_order_confirm, saga_broker_order_cancel
 from consul_client import create_consul_client
 
 # Configure logging ################################################################################
@@ -54,11 +54,16 @@ async def lifespan(__app: FastAPI):
             #task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
             task_auth = asyncio.create_task(order_broker_service.consume_auth_events())
             task_delivery = asyncio.create_task(order_broker_service.consume_delivery_events())
-            task_machine = asyncio.create_task(order_broker_service.consume_machine_events())
+            task_warehouse = asyncio.create_task(order_broker_service.consume_warehouse_events())
             
-            task_payment_saga = asyncio.create_task(saga_broker_service.listen_payment_result())
-            task_delivery_saga = asyncio.create_task(saga_broker_service.listen_delivery_result())
-            tesk_money_return_saga = asyncio.create_task(saga_broker_service.listen_money_returned_result())
+            #----- SAGA ORDER CONFIRM -----
+            task_payment_saga = asyncio.create_task(saga_broker_order_confirm.listen_payment_result())
+            task_delivery_saga = asyncio.create_task(saga_broker_order_confirm.listen_delivery_result())
+            tesk_money_return_saga = asyncio.create_task(saga_broker_order_confirm.listen_money_returned_result())
+
+            #----- SAGA ORDER CANCEL -----
+            task_evt_mfg_canceled = asyncio.create_task(saga_broker_order_cancel.listen_evt_manufacturing_canceled())
+            task_refund_result = asyncio.create_task(saga_broker_order_cancel.listen_refund_result())
         except Exception as e:
             logger.error(f"Error lanzando broker service: {e}")
 
@@ -69,12 +74,15 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down rabbitmq")
         #task_payment.cancel()
         task_delivery.cancel()
-        task_machine.cancel()
+        task_warehouse.cancel()
         task_auth.cancel()
         
         task_payment_saga.cancel()
         task_delivery_saga.cancel()
         tesk_money_return_saga.cancel()
+
+        task_evt_mfg_canceled.cancel()
+        task_refund_result.cancel()
         
         # Deregister from Consul
         result = await consul_client.deregister_service(service_id)
@@ -97,7 +105,6 @@ app = FastAPI(
 )
 
 app.include_router(order_router.router)
-app.include_router(piece_router.router)
 app.include_router(order_router_private.router)
 
 if __name__ == "__main__":

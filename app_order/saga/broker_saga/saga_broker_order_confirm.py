@@ -77,7 +77,7 @@ async def handle_payment_result(message):
             return  # ignoramos mensajes no válidos
 
             # Pasamos el evento al motor de la saga
-        from saga.state_machine.saga_manager import saga_manager
+        from saga.state_machine.order_confirm_saga_manager import saga_manager
         saga = saga_manager.get_saga(order_id)
         await saga.on_event_saga(event)
 
@@ -100,7 +100,7 @@ async def handle_delivery_result(message):
             print(f"⚠️ Estado desconocido del pago: {status}")
             return  # ignoramos mensajes no válidos
 
-        from saga.state_machine.saga_manager import saga_manager
+        from saga.state_machine.order_confirm_saga_manager import saga_manager
         saga = saga_manager.get_saga(order_id)
         await saga.on_event_saga(event)
 
@@ -108,7 +108,7 @@ async def handle_money_returned(message):
     async with message.process():
         data = json.loads(message.body)
         order_id = data.get("order_id")
-        from saga.state_machine.saga_manager import saga_manager
+        from saga.state_machine.order_confirm_saga_manager import saga_manager
         saga = saga_manager.get_saga(order_id = data.get("order_id"))
         await saga.on_event_saga({
             "type": "money_returned"

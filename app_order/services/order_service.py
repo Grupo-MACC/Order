@@ -1,61 +1,63 @@
-from sql import crud, models
+# -*- coding: utf-8 -*-
+"""Capa de servicio del microservicio order.
+
+Cambios:
+    - Eliminamos piezas individuales.
+    - Añadimos updates de estado por fase.
+    - Añadimos compute_overall_status para la UI.
+"""
+
+from __future__ import annotations
+from typing import Optional
 from microservice_chassis_grupo2.core.dependencies import get_db
-from sql.database import async_session
-
-async def update_order_status(order_id: int, status: str) -> models.Order|None:
-    try:
-        async for db in get_db():
-            db_order = await crud.update_order_status(db=db, order_id=order_id, status=status)
-            return db_order
-    except Exception as exc:
-        print(exc)
-        return None
-    
-async def update_order_pieces_status(order_id: int, status: str):
-    async with async_session() as db:
-        try:
-            pieces = await crud.get_pieces_by_order(db=db, order_id=order_id)
-
-            db_pieces = []
-            for piece in pieces:
-
-                db_piece = await crud.update_piece_status(db=db, piece_id=piece.id, status=status)
-
-                if db_piece:
-                    db_pieces.append(db_piece)
-
-            return db_pieces
-
-        except Exception as exc:
-            return None
+from sql import crud, models
 
 
-        
-async def update_piece_status(piece_id: int, status: str) -> models.Piece | None:
-    try:
-        async for db in get_db():
-            db_piece = await crud.update_piece_status(db=db, piece_id=piece_id, status=status)
+def compute_overall_status(order: models.Order) -> str:
+    """Deriva un estado 'global' legible para el cliente.
 
-            return db_piece
-    except Exception as exc:
-        print(f"Error actualizando el estado de la pieza {piece_id}: {exc}")
-        return None
+    Regla simple:
+        1) Si delivery avanzó, manda.
+        2) Si manufacturing avanzó, manda.
+        3) Si no, usamos creation_status.
+    """
+    if order.delivery_status != models.Order.DELIVERY_NOT_STARTED:
+        return f"Delivery:{order.delivery_status}"
+    if order.manufacturing_status != models.Order.MFG_NOT_STARTED:
+        return f"Manufacturing:{order.manufacturing_status}"
+    return f"Creation:{order.creation_status}"
 
-async def update_piece_manufacturing_date_to_now(piece_id: int) -> models.Piece | None:
-    try:
-        async for db in get_db():
-            db_piece = await crud.update_piece_manufacturing_date_to_now(db=db, piece_id=piece_id)
 
-            return db_piece
-    except Exception as exc:
-        print(f"Error actualizando el estado de la pieza {piece_id}: {exc}")
-        return None
+async def update_order_creation_status(order_id: int, status: str) -> Optional[models.Order]:
+    """Actualiza creation_status."""
+    async for db in get_db():
+        return await crud.update_order_creation_status(db=db, order_id=order_id, status=status)
 
-async def get_order_by_id(order_id: int) -> models.Order | None:
-    try:
-        async for db in get_db():
-            db_order = await crud.get_order(db=db, order_id=order_id)
-            return db_order
-    except Exception as exc:
-        print(exc)
-        return None
+
+async def update_order_manufacturing_status(order_id: int, status: str) -> Optional[models.Order]:
+    """Actualiza manufacturing_status."""
+    async for db in get_db():
+        return await crud.update_order_manufacturing_status(db=db, order_id=order_id, status=status)
+
+
+async def update_order_delivery_status(order_id: int, status: str) -> Optional[models.Order]:
+    """Actualiza delivery_status."""
+    async for db in get_db():
+        return await crud.update_order_delivery_status(db=db, order_id=order_id, status=status)
+
+
+async def get_order_by_id(order_id: int) -> Optional[models.Order]:
+    """Obtiene una order por id."""
+    async for db in get_db():
+        return await crud.get_order(db=db, order_id=order_id)
+
+async def create_cancel_saga(saga_id: str, order_id: int, state: str) -> Optional[models.CancelSaga]:
+    """Crea una saga de cancelación en BD."""
+    async for db in get_db():
+        return await crud.create_cancel_saga(db=db, saga_id=saga_id, order_id=order_id, state=state)
+
+
+async def update_cancel_saga(saga_id: str, state: str, error: str | None = None) -> Optional[models.CancelSaga]:
+    """Actualiza el estado interno de la saga de cancelación."""
+    async for db in get_db():
+        return await crud.update_cancel_saga(db=db, saga_id=saga_id, state=state, error=error)

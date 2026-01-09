@@ -1,6 +1,6 @@
-from saga.state_machine.my_states import Pending
+from saga.state_machine.order_confirm_states import Pending
 import logging
-from services.order_service import update_order_status
+from services.order_service import update_order_creation_status
 
 FINAL_STATES = {"Confirmed", "NoMoney", "Returned"}
 
@@ -19,11 +19,19 @@ class OrderSaga():
             await self.state.on_enter(self)
         
     async def _persist_state(self):
+        """
+        Persiste el estado de la saga en creation_status.
+
+        Nota:
+            - Antes se guardaba en un campo único status.
+            - Ahora se guarda en creation_status para no mezclarlo con manufacturing/delivery.
+        """
         try:
-            await update_order_status(self.order.id, str(self.state.__class__.__name__))
+            await update_order_creation_status(self.order.id, str(self.state.__class__.__name__))
             print(f"💾 Estado de saga persistido en BD: {self.state.__class__.__name__}")
         except Exception as e:
             print(f"❌ Error persistiendo estado de saga en BD: {e}")
+            
     async def on_event_saga(self, event):
         try:
             print(f"📨 Evento recibido por Saga: {event}")

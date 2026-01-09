@@ -6,23 +6,52 @@ from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_
 from aio_pika import Message
 from services import order_service
 from consul_client import get_service_url
+import os
+from sql import models 
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_mfg_status(raw: str) -> str:
+    """
+    Normaliza strings de estado que puedan venir desde Warehouse.
+
+    Ejemplos aceptados:
+        - "requested", "Requested"
+        - "in_progress", "inprogress", "InProgress"
+        - "completed", "done"
+        - "failed", "error"
+    """
+    if not raw:
+        return models.Order.MFG_FAILED
+
+    s = str(raw).strip().lower()
+
+    if s in {"requested", "queued"}:
+        return models.Order.MFG_REQUESTED
+    if s in {"inprogress", "in_progress", "working", "processing"}:
+        return models.Order.MFG_IN_PROGRESS
+    if s in {"completed", "done", "finished"}:
+        return models.Order.MFG_COMPLETED
+    if s in {"failed", "error"}:
+        return models.Order.MFG_FAILED
+
+    # Si llega algo raro, mejor marcar failed o dejar log.
+    return models.Order.MFG_FAILED
+
+#region payment
 async def handle_payment_paid(message):
+    """
+    LEGACY: si se usa payment.paid/payment.failed fuera de la saga.
+    No dispara fabricación. Solo actualiza creation_status.
+    """
     async with message.process():
         data = json.loads(message.body)
         order_id = data["order_id"]
 
-        db_order = await order_service.update_order_status(order_id=order_id, status="Paid")
-        try:
-            piece_ids = [str(piece.id) for piece in db_order.pieces]
-        except Exception as exc:
-            print(exc)
-        await publish_do_pieces(order_id=order_id,piece_ids=piece_ids)
-        print(db_order)
-        logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
-        await publish_to_logger(message={"message":f"Pago Confirmado para orden: {order_id}!✅"},topic="order.info")
+        await order_service.update_order_creation_status(order_id=order_id, status=models.Order.CREATION_PAID)
+        logger.info("[ORDER] (legacy) payment.paid → order=%s", order_id)
+
 
 async def handle_payment_failed(message):
     async with message.process():
@@ -52,6 +81,7 @@ async def consume_payment_events():
     logger.info("[ORDER] 🟢 Escuchando eventos de pago...")
     await asyncio.Future()
 
+#region order created
 async def publish_order_created(order_id, number_of_pieces, user_id):
     connection, channel = await get_channel()
     
@@ -64,6 +94,7 @@ async def publish_order_created(order_id, number_of_pieces, user_id):
     await publish_to_logger(message={"message":f"📤 Publicado evento order.created → {order_id}"},topic="order.debug")
     await connection.close()
 
+#region delivery
 async def consume_delivery_events():
     _, channel = await get_channel()
     
@@ -80,62 +111,51 @@ async def consume_delivery_events():
     await asyncio.Future()
 
 async def handle_delivery_ready(message):
+    """
+    Actualiza el delivery_status cuando Delivery confirma que la entrega está lista/realizada.
+
+    Nota:
+        - Antes se llamaba update_order_status() (ya no existe).
+        - Ahora se actualiza el campo delivery_status.
+    """
     async with message.process():
         data = json.loads(message.body)
         order_id = data["order_id"]
         status = data["status"]
-        db_order = await order_service.update_order_status(order_id=order_id, status=status)
-        print(db_order)
-        logger.info(f"[ORDER] ✅ Pago confirmado para orden: {order_id}")
-        await publish_to_logger(message={"message":f"✅ Entrega confirmada para orden: {order_id}"},topic="order.info")
 
-##Machine
-async def handle_pieces_done(message):
-    async with message.process():
-        data = json.loads(message.body)
-        #order_id  = data["order_id"]
-        piece_id = data["piece_id"]
-        status = data["status"]
-        await order_service.update_piece_status(piece_id, status)
+        db_order = await order_service.update_order_delivery_status(order_id=order_id, status=status)
+        logger.info("[ORDER] 🚚 delivery.ready → order_id=%s status=%s", order_id, status)
 
-async def handle_pieces_date(message):
-    async with message.process():
-        data = json.loads(message.body)
-        #order_id  = data["order_id"]
-        piece_id = data["piece_id"]
-        await order_service.update_piece_manufacturing_date_to_now(piece_id)
+        await publish_to_logger(
+            message={"message": f"🚚 Delivery status actualizado: order={order_id} status={status}"},
+            topic="order.info",
+        )
 
-async def consume_machine_events():
-    _, channel = await get_channel()
-    
-    exchange = await declare_exchange(channel)
-    pieces_done_queue   = await channel.declare_queue("pieces_done_queue", durable=True)
-    piece_date_queue  = await channel.declare_queue("piece_date_queue", durable=True)
-    await pieces_done_queue.bind(exchange, routing_key="piece.done")
-    await piece_date_queue.bind(exchange, routing_key="piece.date")
-    await pieces_done_queue.consume(handle_pieces_done)
-    await piece_date_queue.consume(handle_pieces_date)
-    logger.info("[ORDER] 🟢 Escuchando piece.done …")
-    await publish_to_logger(message={"message":"🟢 Escuchando eventos de machine"},topic="order.info")
-    import asyncio; await asyncio.Future()
 
-async def publish_do_pieces(order_id: int, piece_ids: list[str]):
+#region order
+async def publish_do_order(order_id: int, number_of_pieces: int, pieces_a: int, pieces_b: int) -> None:
+    """Publica el comando mínimo hacia warehouse (routing_key=order.created)."""
     connection, channel = await get_channel()
-    
-    exchange = await declare_exchange(channel)
+    try:
+        exchange = await declare_exchange(channel)
+        payload = {
+            "order_id": order_id,
+            "number_of_pieces": int(number_of_pieces),
+            "pieces_a": int(pieces_a),
+            "pieces_b": int(pieces_b),
+        }
+        msg = Message(
+            body=json.dumps(payload).encode(),
+            content_type="application/json",
+            headers={"event": "order.created"},
+            delivery_mode=2,
+        )
+        await exchange.publish(msg, routing_key="order.created")
+        logger.info("[ORDER] 📤 order.created → %s", payload)
+    finally:
+        await connection.close()
 
-    payload = {"order_id": order_id, "piece_ids": piece_ids}
-    msg = Message(
-        json.dumps(payload).encode(),
-        content_type="application/json",
-        headers={"event": "do.pieces"}
-    )
-    await exchange.publish(msg, routing_key="do.pieces")
-    logger.info(f"[ORDER] 📤 machine.do_pieces → order={order_id} pieces={piece_ids}")
-    await publish_to_logger(message={"message":f"📤 machine.do_pieces → order={order_id} pieces={piece_ids}"},topic="order.debug")
-    await connection.close()
-    
-
+#region auth
 async def consume_auth_events():
     _, channel = await get_channel()
     
@@ -184,6 +204,7 @@ async def handle_auth_events(message):
                     topic="order.error",
                 )
 
+#region logger
 async def publish_to_logger(message, topic):
     connection = None
     try:
@@ -211,3 +232,102 @@ async def publish_to_logger(message, topic):
     finally:
         if connection:
             await connection.close()
+
+#region warehouse
+async def publish_order_to_warehouse(order_payload: dict) -> None:
+    """Publica una order (completa) para que Warehouse la procese.
+
+    Args:
+        order_payload:
+            Diccionario JSON con el contrato acordado, por ejemplo:
+            {
+              "order_id": 123,
+              "order_date": "...ISO...",
+              "lines":[{"piece_type":"A","quantity":2}, ...]
+            }
+
+    Notas:
+        - delivery_mode=2 hace el mensaje persistente (si la cola es durable).
+        - Este publisher NO declara colas. Eso debe hacerlo Warehouse en su setup.
+    """
+    logger.info("[ORDER] About to publish to routing_key=%s", "warehouse.order")
+    connection, channel = await get_channel()
+    try:
+        exchange = await declare_exchange(channel)
+
+        body = json.dumps(order_payload).encode("utf-8")
+        msg = Message(
+            body=body,
+            content_type="application/json",
+            delivery_mode=2,  # persistente
+        )
+
+        await exchange.publish(message=msg, routing_key="warehouse.order")#order.created
+        logger.info("[ORDER] Published OK")
+
+    finally:
+        await connection.close()
+
+async def consume_warehouse_events():
+    """
+    Declara una cola para eventos de Warehouse y los consume.
+
+    Config:
+        - WAREHOUSE_EVENTS_BINDING: binding key para el exchange (por defecto 'warehouse.#')
+          Ajusta esto a lo que realmente publique Warehouse.
+    """
+    _, channel = await get_channel()
+    exchange = await declare_exchange(channel)
+
+    binding = os.getenv("WAREHOUSE_EVENTS_BINDING", "warehouse.#")
+
+    queue = await channel.declare_queue("warehouse_events_queue", durable=True)
+    await queue.bind(exchange, routing_key=binding)
+    await queue.consume(handle_warehouse_event)
+
+    logger.info("[ORDER] 🟢 Escuchando eventos de Warehouse con binding=%s", binding)
+    await publish_to_logger(
+        message={"message": f"🟢 Escuchando eventos de Warehouse ({binding})"},
+        topic="order.info",
+    )
+
+    await asyncio.Future()
+
+async def handle_warehouse_event(message):
+    """
+    Consume eventos emitidos por Warehouse sobre el estado de fabricación.
+
+    Requisitos mínimos del payload:
+        - order_id: int
+        - status (o manufacturing_status): str
+    """
+    async with message.process():
+        data = json.loads(message.body)
+
+        order_id = data.get("order_id")
+        raw_status = data.get("status") or data.get("manufacturing_status")
+
+        if not order_id:
+            logger.warning("[ORDER] Evento warehouse ignorado (sin order_id): %s", data)
+            return
+
+        new_status = _normalize_mfg_status(raw_status)
+
+        db_order = await order_service.update_order_manufacturing_status(
+            order_id=int(order_id),
+            status=new_status,
+        )
+
+        logger.info("[ORDER] 🏭 warehouse.* → order=%s mfg_status=%s", order_id, new_status)
+
+        # Cuando Warehouse completa, ahora sí publicamos order.created a delivery
+        if db_order and new_status == models.Order.MFG_COMPLETED:
+            await publish_order_created(
+                order_id=db_order.id,
+                number_of_pieces=db_order.number_of_pieces,
+                user_id=db_order.client_id,
+            )
+            await publish_to_logger(
+                message={"message": f"📤 order.created publicado tras fabricación: order={db_order.id}"},
+                topic="order.info",
+            )
