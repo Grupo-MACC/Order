@@ -37,9 +37,10 @@ RK_PAYMENT_FAILED = "payment.failed"
 
 # --- Routing keys: Order (eventos internos)
 RK_ORDER_CREATED = "order.created"
+RK_ORDER_FABRICATED = "order.fabricated"
 
 # --- Routing keys: Delivery
-RK_DELIVERY_READY = "delivery.ready"
+RK_DELIVERY_READY = "delivery.finished"
 
 # --- Routing keys: Auth (estado del servicio)
 RK_AUTH_RUNNING = "auth.running"
@@ -47,6 +48,8 @@ RK_AUTH_NOT_RUNNING = "auth.not_running"
 
 # --- Routing keys: Warehouse (publicación order -> warehouse)
 RK_WAREHOUSE_ORDER = "warehouse.order"
+
+RK_WAREHOUSE_FABRICATION_COMPLETED = "warehouse.fabrication.completed"
 
 # --- Routing keys: Logger (se usa el topic recibido)
 #     No definimos constantes aquí porque el topic se construye dinámicamente:
@@ -73,34 +76,39 @@ DEFAULT_WAREHOUSE_EVENTS_BINDING = "warehouse.#"
 #region 0. HELPERS
 def _normalize_fabrication_status(raw: str) -> str:
     """
-    Normaliza strings de estado que puedan venir desde Warehouse.
+    Normaliza estados de fabricación provenientes de Warehouse.
 
-    Ejemplos aceptados:
-        - "requested", "Requested"
-        - "in_progress", "inprogress", "InProgress"
-        - "completed", "done"
-        - "failed", "error"
+    Reglas:
+        - Acepta variantes típicas (mayúsculas, guiones, espacios).
+        - Devuelve SIEMPRE uno de los estados internos de models.Order:
+            * MFG_REQUESTED, MFG_IN_PROGRESS, MFG_COMPLETED, MFG_FAILED
 
-    Retorna:
-        - Uno de los estados del modelo Order:
-          MFG_REQUESTED / MFG_IN_PROGRESS / MFG_COMPLETED / MFG_FAILED
+    Ejemplos:
+        - "completed", "done" -> Completed
+        - "in_progress", "working" -> InProgress
+        - "failed", "error" -> Failed
     """
     if not raw:
-        return models.Order.MFG_FAILED
-
-    s = str(raw).strip().lower()
-
-    if s in {"requested", "queued"}:
-        return models.Order.MFG_REQUESTED
-    if s in {"inprogress", "in_progress", "working", "processing"}:
+        # Si no viene status, asumimos que no podemos decidir nada útil.
         return models.Order.MFG_IN_PROGRESS
-    if s in {"completed", "done", "finished"}:
+
+    v = str(raw).strip().lower().replace("-", "_").replace(" ", "_")
+
+    # Completed
+    if v in {"completed", "complete", "done", "finished", "fabricated"}:
         return models.Order.MFG_COMPLETED
-    if s in {"failed", "error"}:
+    # In progress
+    if v in {"in_progress", "inprogress", "working", "manufacturing", "fabricating", "running"}:
+        return models.Order.MFG_IN_PROGRESS
+    # Requested
+    if v in {"requested", "request", "queued", "pending", "created"}:
+        return models.Order.MFG_REQUESTED
+    # Failed
+    if v in {"failed", "error", "ko", "rejected"}:
         return models.Order.MFG_FAILED
 
-    # Si llega algo no contemplado, elegimos fallar (y no dejarlo "en limbo").
-    return models.Order.MFG_FAILED
+    # Fallback conservador: si no lo reconoces, NO marques completed.
+    return models.Order.MFG_IN_PROGRESS
 
 
 # =============================================================================
@@ -177,46 +185,9 @@ async def consume_payment_events() -> None:
 
 
 # =============================================================================
-# Order Created (evento hacia delivery / logs)
-# =============================================================================
-#region 2. ORDER CREATED
-async def publish_order_created(order_id: int, number_of_pieces: int, user_id: int) -> None:
-    """
-    Publica el evento order.created (usado por otros microservicios, p.ej. Delivery).
-
-    Mantiene exactamente el payload original:
-        {"order_id", "number_of_pieces", "user_id", "message"}
-    """
-    connection, channel = await get_channel()
-    try:
-        exchange = await declare_exchange(channel)
-
-        payload = {
-            "order_id": order_id,
-            "number_of_pieces": number_of_pieces,
-            "user_id": user_id,
-            "message": "Orden creada",
-        }
-
-        await exchange.publish(
-            Message(body=json.dumps(payload).encode()),
-            routing_key=RK_ORDER_CREATED,
-        )
-
-        logger.info("[ORDER] 📤 Publicado evento %s → %s", RK_ORDER_CREATED, order_id)
-
-        await publish_to_logger(
-            message={"message": f"📤 Publicado evento {RK_ORDER_CREATED} → {order_id}"},
-            topic="order.debug",
-        )
-    finally:
-        await connection.close()
-
-
-# =============================================================================
 # Order -> Warehouse (comando mínimo)
 # =============================================================================
-#region 3. ORDER FABRIC
+#region 2. ORDER FABRIC
 async def publish_do_order(order_id: int, number_of_pieces: int, pieces_a: int, pieces_b: int) -> None:
     """
     Publica el comando mínimo hacia Warehouse usando routing_key=order.created.
@@ -246,6 +217,43 @@ async def publish_do_order(order_id: int, number_of_pieces: int, pieces_a: int, 
 
         await exchange.publish(msg, routing_key=RK_ORDER_CREATED)
         logger.info("[ORDER] 📤 %s → %s", RK_ORDER_CREATED, payload)
+    finally:
+        await connection.close()
+
+
+# =============================================================================
+# Order Created (evento hacia delivery / logs)
+# =============================================================================
+#region 3. ORDER FABRICATED
+async def publish_order_fabricated(order_id: int, number_of_pieces: int, user_id: int) -> None:
+    """
+    Publica el evento order.fabricated (usado por otros microservicios, p.ej. Delivery).
+
+    Mantiene exactamente el payload original:
+        {"order_id", "number_of_pieces", "user_id", "message"}
+    """
+    connection, channel = await get_channel()
+    try:
+        exchange = await declare_exchange(channel)
+
+        payload = {
+            "order_id": order_id,
+            "number_of_pieces": number_of_pieces,
+            "user_id": user_id,
+            "message": "Orden creada",
+        }
+
+        await exchange.publish(
+            Message(body=json.dumps(payload).encode()),
+            routing_key=RK_ORDER_FABRICATED,
+        )
+
+        logger.info("[ORDER] 📤 Publicado evento %s → %s", RK_ORDER_FABRICATED, order_id)
+
+        await publish_to_logger(
+            message={"message": f"📤 Publicado evento {RK_ORDER_FABRICATED} → {order_id}"},
+            topic="order.debug",
+        )
     finally:
         await connection.close()
 
@@ -294,7 +302,8 @@ async def handle_delivery_ready(message) -> None:
 
         await order_service.update_order_delivery_status(order_id=order_id, status=status)
 
-        logger.info("[ORDER] 🚚 %s → order_id=%s status=%s", RK_DELIVERY_READY, order_id, status)
+        if models.Order.DELIVERY_DELIVERED == status:
+            logger.info("[ORDER] 🚚 %s → order_id=%s status=%s", RK_DELIVERY_READY, order_id, status)
 
         await publish_to_logger(
             message={"message": f"🚚 Delivery status actualizado: order={order_id} status={status}"},
@@ -447,46 +456,93 @@ async def consume_warehouse_events() -> None:
 
 async def handle_warehouse_event(message) -> None:
     """
-    Consume eventos emitidos por Warehouse sobre el estado de fabricación.
+    Consume eventos de Warehouse y, cuando la fabricación termina,
+    dispara el flujo de Delivery publicando `order.fabricated`.
 
-    Requisitos mínimos del payload:
+    Payload esperado:
         - order_id: int
-        - status (o fabrication_status): str
+        - status o fabrication_status: str (p.ej. "completed")
 
-    Comportamiento:
-        - Normaliza el estado y actualiza fabrication_status en Order.
-        - Si fabrication_status pasa a COMPLETED, publica order.created hacia Delivery.
+    Reglas:
+        - Actualiza `fabrication_status` en BD.
+        - Si transiciona a COMPLETED:
+            - Publica `order.fabricated` (evento que Delivery consume).
+        - Idempotencia:
+            - Si ya estaba COMPLETED, no republica.
+            - Si delivery ya no está en NOT_STARTED, no republica.
+        - Robustez:
+            - No usa objetos ORM devueltos por crud después de hacer awaits.
+            - Captura valores primitivos primero.
     """
     async with message.process():
-        data = json.loads(message.body)
+        try:
+            data = json.loads(message.body)
+        except Exception:
+            logger.exception("[ORDER] ❌ Evento de Warehouse no es JSON válido: %r", message.body)
+            return
 
         order_id = data.get("order_id")
-        raw_status = data.get("status") or data.get("fabrication_status")
-
         if not order_id:
             logger.warning("[ORDER] Evento warehouse ignorado (sin order_id): %s", data)
             return
 
+        raw_status = data.get("status") or data.get("fabrication_status")
         new_status = _normalize_fabrication_status(raw_status)
 
-        db_order = await order_service.update_order_fabrication_status(
-            order_id=int(order_id),
+        # 1) Lee estado actual (y CAPTURA PRIMITIVOS antes de await extra)
+        current = await order_service.get_order_by_id(int(order_id))
+        if not current:
+            logger.warning("[ORDER] Evento warehouse para order inexistente: order_id=%s payload=%s", order_id, data)
+            return
+
+        prev_fab_status = current.fabrication_status
+        prev_delivery_status = current.delivery_status
+
+        # Captura primitivos que necesitarás para publicar
+        order_id_int = int(current.id)
+        num_pieces = int(current.number_of_pieces)
+        user_id = int(current.client_id)
+
+        # 2) Persiste el nuevo estado de fabricación
+        await order_service.update_order_fabrication_status(
+            order_id=order_id_int,
             status=new_status,
         )
 
-        logger.info("[ORDER] 🏭 warehouse.* → order=%s fabrication_status=%s", order_id, new_status)
+        logger.info(
+            "[ORDER] 🏭 warehouse.fabrication.* → order=%s fabrication_status=%s (prev=%s)",
+            order_id_int, new_status, prev_fab_status
+        )
 
-        # Cuando Warehouse completa, publicamos order.created a delivery
-        if db_order and new_status == models.Order.MFG_COMPLETED:
-            await publish_order_created(
-                order_id=db_order.id,
-                number_of_pieces=db_order.number_of_pieces,
-                user_id=db_order.client_id,
+        # 3) Enganche con Delivery: SOLO si acabas de llegar a COMPLETED
+        if new_status == models.Order.MFG_COMPLETED:
+            # Idempotencia por fabricación
+            if prev_fab_status == models.Order.MFG_COMPLETED:
+                logger.info("[ORDER] ✅ Completed duplicado (no republish): order=%s", order_id_int)
+                return
+
+            # Idempotencia por delivery (si ya arrancó por cualquier motivo)
+            if prev_delivery_status != models.Order.DELIVERY_NOT_STARTED:
+                logger.info(
+                    "[ORDER] ✅ Fabricación completed pero delivery ya inició (no republish): order=%s delivery=%s",
+                    order_id_int, prev_delivery_status
+                )
+                return
+
+            # Publica evento que dispara Delivery
+            await publish_order_fabricated(
+                order_id=order_id_int,
+                number_of_pieces=num_pieces,
+                user_id=user_id,
             )
+
+            # IMPORTANTE: no uses `db_order.id` aquí.
             await publish_to_logger(
-                message={"message": f"📤 {RK_ORDER_CREATED} publicado tras fabricación: order={db_order.id}"},
+                message={"message": f"📤 {RK_ORDER_FABRICATED} publicado tras fabricación: order={order_id_int}"},
                 topic="order.info",
             )
+
+
 
 
 # =============================================================================
