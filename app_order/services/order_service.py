@@ -18,13 +18,13 @@ def compute_overall_status(order: models.Order) -> str:
 
     Regla simple:
         1) Si delivery avanzó, manda.
-        2) Si manufacturing avanzó, manda.
+        2) Si fabrication avanzó, manda.
         3) Si no, usamos creation_status.
     """
     if order.delivery_status != models.Order.DELIVERY_NOT_STARTED:
         return f"Delivery:{order.delivery_status}"
-    if order.manufacturing_status != models.Order.MFG_NOT_STARTED:
-        return f"Manufacturing:{order.manufacturing_status}"
+    if order.fabrication_status != models.Order.MFG_NOT_STARTED:
+        return f"Manufacturing:{order.fabrication_status}"
     return f"Creation:{order.creation_status}"
 
 
@@ -34,10 +34,10 @@ async def update_order_creation_status(order_id: int, status: str) -> Optional[m
         return await crud.update_order_creation_status(db=db, order_id=order_id, status=status)
 
 
-async def update_order_manufacturing_status(order_id: int, status: str) -> Optional[models.Order]:
-    """Actualiza manufacturing_status."""
+async def update_order_fabrication_status(order_id: int, status: str) -> Optional[models.Order]:
+    """Actualiza fabrication_status."""
     async for db in get_db():
-        return await crud.update_order_manufacturing_status(db=db, order_id=order_id, status=status)
+        return await crud.update_order_fabrication_status(db=db, order_id=order_id, status=status)
 
 
 async def update_order_delivery_status(order_id: int, status: str) -> Optional[models.Order]:

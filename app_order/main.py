@@ -62,7 +62,7 @@ async def lifespan(__app: FastAPI):
             tesk_money_return_saga = asyncio.create_task(saga_broker_order_confirm.listen_money_returned_result())
 
             #----- SAGA ORDER CANCEL -----
-            task_evt_mfg_canceled = asyncio.create_task(saga_broker_order_cancel.listen_evt_manufacturing_canceled())
+            task_evt_fabrication_canceled = asyncio.create_task(saga_broker_order_cancel.listen_evt_fabrication_canceled())
             task_refund_result = asyncio.create_task(saga_broker_order_cancel.listen_refund_result())
         except Exception as e:
             logger.error(f"Error lanzando broker service: {e}")
@@ -81,7 +81,7 @@ async def lifespan(__app: FastAPI):
         task_delivery_saga.cancel()
         tesk_money_return_saga.cancel()
 
-        task_evt_mfg_canceled.cancel()
+        task_evt_fabrication_canceled.cancel()
         task_refund_result.cancel()
         
         # Deregister from Consul

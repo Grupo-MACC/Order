@@ -4,7 +4,7 @@
 Cambios clave:
     - Eliminamos todas las operaciones sobre `Piece`.
     - La Order ahora almacena cantidades de A/B y total.
-    - Añadimos updates de estados por fase (creation/mfg/delivery).
+    - Añadimos updates de estados por fase (creation/fabrication/delivery).
 """
 
 import logging
@@ -31,7 +31,7 @@ async def create_order_from_schema(db: AsyncSession, order, current_user):
         pieces_b=int(order.pieces_b),
         number_of_pieces=total,
         creation_status=models.Order.CREATION_PENDING,
-        manufacturing_status=models.Order.MFG_NOT_STARTED,
+        fabrication_status=models.Order.MFG_NOT_STARTED,
         delivery_status=models.Order.DELIVERY_NOT_STARTED,
         status=models.Order.CREATION_PENDING,  # legacy sync opcional
     )
@@ -75,12 +75,12 @@ async def update_order_creation_status(db: AsyncSession, order_id: int, status: 
     return db_order
 
 
-async def update_order_manufacturing_status(db: AsyncSession, order_id: int, status: str):
-    """Update manufacturing_status (warehouse)."""
+async def update_order_fabrication_status(db: AsyncSession, order_id: int, status: str):
+    """Update fabrication_status (warehouse)."""
     db_order = await db.get(models.Order, order_id)
     if db_order is None:
         return None
-    db_order.manufacturing_status = status
+    db_order.fabrication_status = status
     db_order.status = status  # legacy sync opcional
     await db.commit()
     await db.refresh(db_order)

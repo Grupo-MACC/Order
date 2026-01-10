@@ -12,7 +12,7 @@ from sql import models
 logger = logging.getLogger(__name__)
 
 
-def _normalize_mfg_status(raw: str) -> str:
+def _normalize_fabrication_status(raw: str) -> str:
     """
     Normaliza strings de estado que puedan venir desde Warehouse.
 
@@ -299,26 +299,26 @@ async def handle_warehouse_event(message):
 
     Requisitos mínimos del payload:
         - order_id: int
-        - status (o manufacturing_status): str
+        - status (o fabrication_status): str
     """
     async with message.process():
         data = json.loads(message.body)
 
         order_id = data.get("order_id")
-        raw_status = data.get("status") or data.get("manufacturing_status")
+        raw_status = data.get("status") or data.get("fabrication_status")
 
         if not order_id:
             logger.warning("[ORDER] Evento warehouse ignorado (sin order_id): %s", data)
             return
 
-        new_status = _normalize_mfg_status(raw_status)
+        new_status = _normalize_fabrication_status(raw_status)
 
-        db_order = await order_service.update_order_manufacturing_status(
+        db_order = await order_service.update_order_fabrication_status(
             order_id=int(order_id),
             status=new_status,
         )
 
-        logger.info("[ORDER] 🏭 warehouse.* → order=%s mfg_status=%s", order_id, new_status)
+        logger.info("[ORDER] 🏭 warehouse.* → order=%s fabrication_status=%s", order_id, new_status)
 
         # Cuando Warehouse completa, ahora sí publicamos order.created a delivery
         if db_order and new_status == models.Order.MFG_COMPLETED:

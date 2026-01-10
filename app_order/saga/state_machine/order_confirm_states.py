@@ -60,7 +60,7 @@ class Confirmed():
 
         # Marca fabricación como solicitada (opcional pero útil para UI inmediata)
         from services import order_service
-        await order_service.update_order_manufacturing_status(
+        await order_service.update_order_fabrication_status(
             order_id=saga.order.id,
             status=models.Order.MFG_REQUESTED,
         )

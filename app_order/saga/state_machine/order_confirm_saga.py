@@ -24,7 +24,7 @@ class OrderSaga():
 
         Nota:
             - Antes se guardaba en un campo único status.
-            - Ahora se guarda en creation_status para no mezclarlo con manufacturing/delivery.
+            - Ahora se guarda en creation_status para no mezclarlo con fabrication/delivery.
         """
         try:
             await update_order_creation_status(self.order.id, str(self.state.__class__.__name__))
