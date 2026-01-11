@@ -28,7 +28,7 @@ from sql import models
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# RabbitMQ: Routing Keys / Queues / Env Vars (único punto de control)
+# Constantes RabbitMQ (routing keys / colas / topics)
 # =============================================================================
 
 # --- Routing keys: Payment (eventos legacy)
@@ -36,7 +36,7 @@ RK_PAYMENT_PAID = "payment.paid"
 RK_PAYMENT_FAILED = "payment.failed"
 
 # --- Routing keys: Order (eventos internos)
-RK_ORDER_CREATED = "order.created"
+RK_ORDER_CREATED = "order.confirmed"
 RK_ORDER_FABRICATED = "order.fabricated"
 
 # --- Routing keys: Delivery
@@ -45,9 +45,6 @@ RK_DELIVERY_READY = "delivery.finished"
 # --- Routing keys: Auth (estado del servicio)
 RK_AUTH_RUNNING = "auth.running"
 RK_AUTH_NOT_RUNNING = "auth.not_running"
-
-# --- Routing keys: Warehouse (publicación order -> warehouse)
-RK_WAREHOUSE_ORDER = "warehouse.order"
 
 RK_WAREHOUSE_FABRICATION_COMPLETED = "warehouse.fabrication.completed"
 
@@ -190,7 +187,7 @@ async def consume_payment_events() -> None:
 #region 2. ORDER FABRIC
 async def publish_do_order(order_id: int, number_of_pieces: int, pieces_a: int, pieces_b: int) -> None:
     """
-    Publica el comando mínimo hacia Warehouse usando routing_key=order.created.
+    Publica el comando mínimo hacia Warehouse usando routing_key=order.confirmed.
 
     Importante:
         - Aunque el nombre de función sugiere "do_order", el contrato actual
@@ -386,43 +383,6 @@ async def handle_auth_events(message) -> None:
 # Warehouse (publisher legacy + consumer de eventos)
 # =============================================================================
 #region 6. WAREHOUSE
-async def publish_order_to_warehouse(order_payload: dict) -> None:
-    """
-    Publica una order (completa) para que Warehouse la procese.
-
-    Args:
-        order_payload:
-            Diccionario JSON con el contrato acordado, por ejemplo:
-            {
-              "order_id": 123,
-              "order_date": "...ISO...",
-              "lines":[{"piece_type":"A","quantity":2}, ...]
-            }
-
-    Notas:
-        - delivery_mode=2 hace el mensaje persistente (si la cola es durable).
-        - Este publisher NO declara colas. Eso debe hacerlo Warehouse en su setup.
-        - Mantengo routing_key=RK_WAREHOUSE_ORDER, como estaba.
-    """
-    logger.info("[ORDER] About to publish to routing_key=%s", RK_WAREHOUSE_ORDER)
-
-    connection, channel = await get_channel()
-    try:
-        exchange = await declare_exchange(channel)
-
-        body = json.dumps(order_payload).encode("utf-8")
-        msg = Message(
-            body=body,
-            content_type="application/json",
-            delivery_mode=2,
-        )
-
-        await exchange.publish(message=msg, routing_key=RK_WAREHOUSE_ORDER)
-        logger.info("[ORDER] Published OK")
-    finally:
-        await connection.close()
-
-
 async def consume_warehouse_events() -> None:
     """
     Declara una cola para eventos de Warehouse y los consume.

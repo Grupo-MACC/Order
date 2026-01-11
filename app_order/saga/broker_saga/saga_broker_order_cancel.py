@@ -33,7 +33,7 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Routing keys (único punto de control)
+# Constantes RabbitMQ (routing keys / colas / topics)
 # =============================================================================
 
 # --- Comandos hacia otros microservicios

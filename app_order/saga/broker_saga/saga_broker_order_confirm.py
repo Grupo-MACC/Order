@@ -4,14 +4,14 @@ Broker RabbitMQ para el SAGA de confirmación de pedido (Order).
 
 Responsabilidades:
     - Publicar comandos (exchange_command):
-        * pay              -> Payment
-        * check.delivery    -> Delivery
-        * return.money      -> Payment (devolución)
+        * cmd.check.payment              -> Payment
+        * cmd.check.delivery    -> Delivery
+        * cmd.return.money      -> Payment (devolución)
 
     - Consumir resultados (exchange_saga):
-        * payment.result    -> resultado de pago
-        * delivery.result   -> resultado de comprobación de entrega
-        * money.returned    -> confirmación de devolución
+        * evt.payment.checked    -> resultado de pago
+        * evt.delivery.checked   -> resultado de comprobación de entrega
+        * evt.money.returned    -> confirmación de devolución
 
 Notas de diseño:
     - Todas las routing keys y colas se definen como constantes en un único punto.
@@ -35,18 +35,18 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Routing keys (único punto de control)
+# Constantes RabbitMQ (routing keys / colas / topics)
 # =============================================================================
 
 # --- Commands (publicados por Order)
-RK_CMD_PAY = "pay"
-RK_CMD_CHECK_DELIVERY = "check.delivery"
-RK_CMD_RETURN_MONEY = "return.money"
+RK_CMD_PAY = "cmd.check.payment"
+RK_CMD_CHECK_DELIVERY = "cmd.check.delivery"
+RK_CMD_RETURN_MONEY = "cmd.return.money"
 
 # --- Saga events (consumidos por Order)
-RK_EVT_PAYMENT_RESULT = "payment.result"
-RK_EVT_DELIVERY_RESULT = "delivery.result"
-RK_EVT_MONEY_RETURNED = "money.returned"
+RK_EVT_PAYMENT_RESULT = "evt.payment.checked"
+RK_EVT_DELIVERY_RESULT = "evt.delivery.checked"
+RK_EVT_MONEY_RETURNED = "evt.money.returned"
 
 # --- Nombres de colas
 Q_PAYMENT_RESULT = "payment_result_queue"
@@ -92,7 +92,7 @@ async def publish_payment_command(order_data) -> None:
           "order_id": order_data.id,
           "user_id": order_data.user_id,
           "number_of_pieces": order_data.number_of_pieces,
-          "message": "Pay order"
+          "message": "cmd.check.payment order"
         }
     Routing key:
         RK_CMD_PAY
@@ -105,7 +105,7 @@ async def publish_payment_command(order_data) -> None:
             "order_id": order_data.id,
             "user_id": order_data.user_id,
             "number_of_pieces": order_data.number_of_pieces,
-            "message": "Pay order",
+            "message": "cmd.check.payment order",
         }
 
         await exchange.publish(
@@ -185,7 +185,7 @@ async def publish_return_money_command(order_data) -> None:
 #region 2. HANDLERS
 async def handle_payment_result(message) -> None:
     """
-    Maneja el evento payment.result y lo traduce a evento interno del SAGA.
+    Maneja el evento evt.payment.checked y lo traduce a evento interno del SAGA.
 
     Espera:
         {"order_id": ..., "status": "paid|not_paid|..."}
@@ -226,7 +226,7 @@ async def handle_payment_result(message) -> None:
 #region 2.1 delivery result
 async def handle_delivery_result(message) -> None:
     """
-    Maneja el evento delivery.result y lo traduce a evento interno del SAGA.
+    Maneja el evento evt.delivery.checked y lo traduce a evento interno del SAGA.
 
     Espera:
         {"order_id": ..., "status": "deliverable|not_deliverable|..."}
@@ -267,7 +267,7 @@ async def handle_delivery_result(message) -> None:
 #region 2.2 money returned
 async def handle_money_returned(message) -> None:
     """
-    Maneja el evento money.returned y notifica al SAGA.
+    Maneja el evento evt.money.returned y notifica al SAGA.
 
     Espera:
         {"order_id": ...}
@@ -300,7 +300,7 @@ async def handle_money_returned(message) -> None:
 #region 3. LISTENERS
 async def listen_payment_result() -> None:
     """
-    Suscribe a payment.result en exchange_saga usando Q_PAYMENT_RESULT.
+    Suscribe a evt.payment.checked en exchange_saga usando Q_PAYMENT_RESULT.
     """
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
@@ -315,7 +315,7 @@ async def listen_payment_result() -> None:
 
 async def listen_delivery_result() -> None:
     """
-    Suscribe a delivery.result en exchange_saga usando Q_DELIVERY_RESULT.
+    Suscribe a evt.delivery.checked en exchange_saga usando Q_DELIVERY_RESULT.
     """
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
@@ -330,7 +330,7 @@ async def listen_delivery_result() -> None:
 
 async def listen_money_returned_result() -> None:
     """
-    Suscribe a money.returned en exchange_saga usando Q_MONEY_RETURNED.
+    Suscribe a evt.money.returned en exchange_saga usando Q_MONEY_RETURNED.
     """
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
