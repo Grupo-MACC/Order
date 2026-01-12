@@ -48,7 +48,7 @@ class Order(OrderBase):
     number_of_pieces: int = Field(description="Total de piezas (A+B)", example=5)
 
     creation_status: str = Field(description="Estado creación (saga)", example="Paid")
-    manufacturing_status: str = Field(description="Estado fabricación (warehouse)", example="Requested")
+    fabrication_status: str = Field(description="Estado fabricación (warehouse)", example="Requested")
     delivery_status: str = Field(description="Estado entrega (delivery)", example="NotStarted")
 
 
@@ -56,7 +56,7 @@ class OrderStatusResponse(BaseModel):
     """Respuesta del endpoint /order/{id}/status."""
     order_id: int = Field(example=1)
     creation_status: str = Field(example="Confirmed")
-    manufacturing_status: str = Field(example="Requested")
+    fabrication_status: str = Field(example="Requested")
     delivery_status: str = Field(example="NotStarted")
     overall_status: str = Field(example="Manufacturing:Requested")
 

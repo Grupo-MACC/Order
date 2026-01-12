@@ -22,45 +22,6 @@ router = APIRouter(
     prefix="/order"
 )
 
-
-@router.post("/test")
-async def debug_publish_warehouse(order: dict | None = Body(default=None)):
-    """Test: publica una order a Warehouse.
-    
-    - Si envías JSON en el body, publica ese JSON.
-    - Si no envías body, publica una order por defecto.
-    - Si falta order_date, la rellena.
-
-    curl -X POST http://localhost:5000/order/test   -H "Content-Type: application/json"   -d '{
-        "order_id": 777,
-        "lines": [
-        {"piece_type": "A", "quantity": 3},
-        {"piece_type": "B", "quantity": 2}
-        ]
-    }'
-    """
-    from broker.order_broker_service import publish_order_to_warehouse
-    from datetime import datetime, timezone
-
-    default_order = {
-        "order_id": 123,
-        "order_date": "2025-12-23T10:15:00Z",
-        "lines": [
-            {"piece_type": "A", "quantity": 2},
-            {"piece_type": "B", "quantity": 1},
-        ],
-    }
-
-    payload = order or default_order
-
-    if "order_date" not in payload or not payload["order_date"]:
-        payload["order_date"] = datetime.now(timezone.utc).isoformat()
-
-    await publish_order_to_warehouse(payload)
-    return {"detail": "Published to warehouse", "order": payload}
-
-
-
 @router.get(
     "/health",
     summary="Health check endpoint",
@@ -163,7 +124,7 @@ async def get_single_order(
 #region GET /order/status/id
 @router.get(
     "/{order_id}/status",
-    summary="Retrieve order status (creation/manufacturing/delivery)",
+    summary="Retrieve order status (creation/fabrication/delivery)",
     response_model=schemas.OrderStatusResponse,
     tags=["Order"],
 )
@@ -183,7 +144,7 @@ async def get_order_status(
     return schemas.OrderStatusResponse(
         order_id=order.id,
         creation_status=order.creation_status,
-        manufacturing_status=order.manufacturing_status,
+        fabrication_status=order.fabrication_status,
         delivery_status=order.delivery_status,
         overall_status=overall,
     )
@@ -241,11 +202,11 @@ async def remove_order_by_id(
 #region POST /order/id/cancel
 @router.post(
     "/{order_id}/cancel",
-    summary="Cancel order while manufacturing (starts cancel SAGA)",
+    summary="Cancel order while fabrication (starts cancel SAGA)",
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Order"],
 )
-async def cancel_order_in_manufacturing(
+async def cancel_order_in_fabrication(
     order_id: int,
     db: AsyncSession = Depends(get_db),
     user: int = Depends(get_current_user),
@@ -257,9 +218,9 @@ async def cancel_order_in_manufacturing(
         - Si no, se rechaza sin iniciar la saga
 
     Efecto:
-        - Pasa manufacturing_status a Canceling
-        - Publica cmd.cancel_manufacturing a Warehouse
-        - Continúa por eventos (evt.manufacturing_canceled → cmd.refund → refund.result)
+        - Pasa fabrication_status a Canceling
+        - Publica cmd.cancel_fabrication a Warehouse
+        - Continúa por eventos (evt.fabrication_canceled → cmd.refund → refund.result)
     """
     db_order = await crud.get_order(db, order_id)
     if not db_order:
@@ -286,21 +247,21 @@ async def cancel_order_in_manufacturing(
             detail=f"Order not cancelable: creation_status={db_order.creation_status}",
         )
 
-    if db_order.manufacturing_status not in {models.Order.MFG_REQUESTED, models.Order.MFG_IN_PROGRESS}:
+    if db_order.fabrication_status not in {models.Order.MFG_REQUESTED, models.Order.MFG_IN_PROGRESS}:
         raise HTTPException(
             status_code=409,
-            detail=f"Order not cancelable: manufacturing_status={db_order.manufacturing_status}",
+            detail=f"Order not cancelable: fabrication_status={db_order.fabrication_status}",
         )
 
     # Evitar duplicados (si ya está cancelando o finalizada)
-    if db_order.manufacturing_status in {models.Order.MFG_CANCELING, models.Order.MFG_CANCELED, models.Order.MFG_CANCEL_PENDING_REFUND}:
+    if db_order.fabrication_status in {models.Order.MFG_CANCELING, models.Order.MFG_CANCELED, models.Order.MFG_CANCEL_PENDING_REFUND}:
         raise HTTPException(status_code=409, detail="Cancel already requested or finished")
 
     saga_id = str(uuid.uuid4())
 
     # Persistimos saga + ponemos estado intermedio CANCELING (evita carreras):contentReference[oaicite:4]{index=4}
     await crud.create_cancel_saga(db, saga_id=saga_id, order_id=db_order.id, state="Canceling")
-    await crud.update_order_manufacturing_status(db, order_id=db_order.id, status=models.Order.MFG_CANCELING)
+    await crud.update_order_fabrication_status(db, order_id=db_order.id, status=models.Order.MFG_CANCELING)
 
     # Arrancamos saga en memoria
     order_dto = schemas.Order.model_validate(db_order)
@@ -310,5 +271,5 @@ async def cancel_order_in_manufacturing(
         "detail": "Cancel SAGA started",
         "order_id": db_order.id,
         "saga_id": saga_id,
-        "manufacturing_status": models.Order.MFG_CANCELING,
+        "fabrication_status": models.Order.MFG_CANCELING,
     }

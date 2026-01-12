@@ -11,7 +11,7 @@ Flujo (según informe):
 from sql import models
 from services import order_service
 from saga.broker_saga.saga_broker_order_cancel import (
-    publish_cancel_manufacturing_command,
+    publish_cancel_fabrication_command,
     publish_refund_command,
 )
 
@@ -21,7 +21,7 @@ class Canceling:
 
     async def on_enter(self, saga):
         """Al entrar, persistimos status y ordenamos cancelar fabricación."""
-        await order_service.update_order_manufacturing_status(
+        await order_service.update_order_fabrication_status(
             order_id=saga.order.id,
             status=models.Order.MFG_CANCELING,
         )
@@ -30,14 +30,14 @@ class Canceling:
             state="Canceling",
         )
 
-        await publish_cancel_manufacturing_command(
+        await publish_cancel_fabrication_command(
             order_id=saga.order.id,
             saga_id=saga.saga_id,
         )
 
     async def on_event(self, event, saga):
         """Transiciones desde Canceling."""
-        if event.get("type") == "manufacturing_canceled":
+        if event.get("type") == "fabrication_canceled":
             return Refunding()
         return self
 
@@ -73,7 +73,7 @@ class Canceled:
 
     async def on_enter(self, saga):
         """Marcamos el pedido como cancelado (final)."""
-        await order_service.update_order_manufacturing_status(
+        await order_service.update_order_fabrication_status(
             order_id=saga.order.id,
             status=models.Order.MFG_CANCELED,
         )
@@ -92,7 +92,7 @@ class CancelPendingRefund:
 
     async def on_enter(self, saga):
         """Persistimos el estado final y el error si lo hay."""
-        await order_service.update_order_manufacturing_status(
+        await order_service.update_order_fabrication_status(
             order_id=saga.order.id,
             status=models.Order.MFG_CANCEL_PENDING_REFUND,
         )

@@ -6,7 +6,7 @@ Este microservicio **order** ya no gestiona piezas individuales.
 Resumen del cambio:
     - Antes: order creaba `Piece` (tabla `piece`) y publicaba `do.pieces` hacia machine.
     - Ahora: warehouse gestiona stock + fabricación y habla con machine.
-    - Ahora: se puede cancelar un pedido en manufacturing (antes no se podía).
+    - Ahora: se puede cancelar un pedido en fabrication (antes no se podía).
 
 Decisión de diseño:
     - Order solo almacena el pedido (cantidades) y estados.
@@ -20,13 +20,13 @@ Notas sobre estados:
     - Para no pisarte el estado cuando entren eventos de distintos procesos,
       separo los estados en tres campos:
         * creation_status: saga de creación (pago + delivery-check)
-        * manufacturing_status: lo que reporte warehouse
+        * fabrication_status: lo que reporte warehouse
         * delivery_status: lo que reporte delivery
 
     - Dejo `status` como campo "legacy" (si ya hay consumidores externos).
       Si no lo necesitas, puedes eliminarlo y simplificar.
     
-    - Se añaden estados de cancelación en manufacturing_status para reflejar:
+    - Se añaden estados de cancelación en fabrication_status para reflejar:
         * CANCELING (intermedio)
         * CANCELED (final OK)
         * CANCEL_PENDING_REFUND (final coherente si refund falla)
@@ -40,7 +40,7 @@ from microservice_chassis_grupo2.sql.models import BaseModel
 class Order(BaseModel):
     """Order database table representation."""
 
-    __tablename__ = "manufacturing_order"
+    __tablename__ = "fabrication_order"
 
     # Estados (constantes recomendadas para evitar strings mágicos).
     CREATION_PENDING = "Pending"
@@ -61,7 +61,7 @@ class Order(BaseModel):
     DELIVERY_DELIVERED = "Delivered"
     DELIVERY_FAILED = "Failed"
 
-    # --- CANCELATION: estados de cancelación (se guardan en manufacturing_status) ---
+    # --- CANCELATION: estados de cancelación (se guardan en fabrication_status) ---
     MFG_CANCELING = "Canceling"
     MFG_CANCELED = "Canceled"
     MFG_CANCEL_PENDING_REFUND = "CancelPendingRefund"
@@ -84,7 +84,7 @@ class Order(BaseModel):
 
     # Estados por fase.
     creation_status = Column(String(64), nullable=False, default=CREATION_PENDING)
-    manufacturing_status = Column(String(64), nullable=False, default=MFG_NOT_STARTED)
+    fabrication_status = Column(String(64), nullable=False, default=MFG_NOT_STARTED)
     delivery_status = Column(String(64), nullable=False, default=DELIVERY_NOT_STARTED)
 
     # Campo legacy (opcional). Manténlo hasta que migres consumidores.
