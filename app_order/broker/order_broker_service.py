@@ -66,6 +66,11 @@ Q_WAREHOUSE_EVENTS = "warehouse_events_queue"
 ENV_WAREHOUSE_EVENTS_BINDING = "WAREHOUSE_EVENTS_BINDING"
 DEFAULT_WAREHOUSE_EVENTS_BINDING = "warehouse.#"
 
+# --- Topics de logs ---
+TOPIC_INFO = "order.info"
+TOPIC_ERROR = "order.error"
+TOPIC_DEBUG = "order.debug"
+
 
 # =============================================================================
 # Helpers internos
@@ -336,47 +341,93 @@ async def consume_auth_events() -> None:
     await asyncio.Future()
 
 
-async def handle_auth_events(message) -> None:
+async def handle_auth_events(message: dict) -> None:
+    """Gestiona eventos de auth.running / auth.not_running.
+
+    Si auth está running:
+        - Descubre auth via Consul
+        - Descarga la public key
+        - La guarda en PUBLIC_KEY_PATH
     """
-    Maneja eventos de estado de Auth.
+    try:
+        await ensure_auth_public_key()
 
-    Comportamiento actual:
-        - Si status == "running":
-            - Descubre Auth via Consul
-            - Descarga public key (/auth/public-key)
-            - Guarda en PUBLIC_KEY_PATH
-        - Si no, no actúa (se mantiene).
+        logger.info("✅ Clave pública de Auth guardada en %s", PUBLIC_KEY_PATH)
+        await publish_to_logger(
+            message={"message": "Clave pública guardada", "path": PUBLIC_KEY_PATH},
+            topic=TOPIC_INFO,
+        )
+    except Exception as exc:
+        logger.error("[PAYMENT] ❌ Error obteniendo clave pública: %s", exc)
+        await publish_to_logger(
+            message={"message": "Error clave pública", "error": str(exc)},
+            topic=TOPIC_ERROR,
+        )
+
+async def ensure_auth_public_key(
+    max_attempts: int = 30,
+    sleep_seconds: float = 1.0,
+) -> None:
     """
-    async with message.process():
-        data = json.loads(message.body)
+    Asegura que existe la clave pública de Auth en disco antes de validar JWT.
 
-        if data.get("status") == "running":
-            try:
-                auth_service_url = await get_service_url("auth")
-                logger.info("[ORDER] 🔍 Auth descubierto via Consul: %s", auth_service_url)
+    Por qué existe esta función:
+        - El evento `auth.running` NO es fiable (se puede perder si el consumer no estaba listo).
+        - Si la public key no está, cualquier endpoint con get_current_user() cae con 401.
 
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(f"{auth_service_url}/auth/public-key")
-                    response.raise_for_status()
-                    public_key = response.text
+    Estrategia:
+        1) Si el fichero ya existe y parece PEM válido, no hacemos nada.
+        2) Descubrimos Auth (Consul) y pedimos /auth/public-key con reintentos.
+        3) Guardamos de forma atómica (write tmp + os.replace) para evitar lecturas a medio escribir.
+    """
+    # 1) Si ya está, salimos
+    if os.path.exists(PUBLIC_KEY_PATH):
+        try:
+            with open(PUBLIC_KEY_PATH, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "BEGIN PUBLIC KEY" in content:
+                return
+        except Exception:
+            # Si no se puede leer, forzamos re-descarga
+            pass
 
-                with open(PUBLIC_KEY_PATH, "w", encoding="utf-8") as f:
-                    f.write(public_key)
+    # Asegurar directorio
+    dir_path = os.path.dirname(PUBLIC_KEY_PATH)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
 
-                logger.info("[ORDER] ✅ Clave pública de Auth guardada en %s", PUBLIC_KEY_PATH)
+    last_exc: Exception | None = None
 
-                await publish_to_logger(
-                    message={"message": "Clave pública de Auth guardada", "path": PUBLIC_KEY_PATH},
-                    topic="order.info",
-                )
+    for attempt in range(1, max_attempts + 1):
+        try:
+            auth_service_url = await get_service_url("auth", default_url="http://auth:5004")
 
-            except Exception as exc:
-                logger.error("[ORDER] ❌ Error obteniendo clave pública de Auth: %s", exc)
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"{auth_service_url}/auth/public-key")
+                r.raise_for_status()
+                public_key = r.text
 
-                await publish_to_logger(
-                    message={"message": "Error obteniendo clave pública de Auth", "error": str(exc)},
-                    topic="order.error",
-                )
+            if "BEGIN PUBLIC KEY" not in public_key:
+                raise ValueError("Auth devolvió una clave que no parece PEM válido")
+
+            tmp_path = f"{PUBLIC_KEY_PATH}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(public_key)
+
+            os.replace(tmp_path, PUBLIC_KEY_PATH)
+
+            logger.info("✅ Public key de Auth guardada en %s", PUBLIC_KEY_PATH)
+            return
+
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "⚠️ No se pudo obtener public key (intento %s/%s): %s",
+                attempt, max_attempts, exc
+            )
+            await asyncio.sleep(sleep_seconds)
+
+    raise RuntimeError(f"No se pudo obtener la public key de Auth: {last_exc}")
 
 
 # =============================================================================
