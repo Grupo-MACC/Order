@@ -41,6 +41,9 @@ async def lifespan(__app: FastAPI):
         )
         logger.info(f"✅ Consul service registration: {result}")
 
+        # Asegura que el engine del chassis existe
+        await database.init_database()
+        
         try:
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
