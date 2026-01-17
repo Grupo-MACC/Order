@@ -21,7 +21,7 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
     declare_exchange_logs,
     get_channel,
 )
-from consul_client import get_service_url
+from consul_client import get_consul_client
 from services import order_service
 from sql import models
 
@@ -352,7 +352,7 @@ async def handle_auth_events(message) -> None:
 
         if data.get("status") == "running":
             try:
-                auth_service_url = await get_service_url("auth")
+                auth_service_url = await get_consul_client().get_service_base_url("auth")
                 logger.info("[ORDER] 🔍 Auth descubierto via Consul: %s", auth_service_url)
 
                 async with httpx.AsyncClient() as client:
