@@ -26,8 +26,8 @@ from aio_pika import Message
 
 from microservice_chassis_grupo2.core.rabbitmq_core import (
     get_channel,
-    declare_exchange_command,
-    declare_exchange_saga,
+    declare_exchange_saga_cancelation_commands,
+    declare_exchange_saga_cancelation_events,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ RK_EVT_MFG_CANCELED = "evt.fabrication_canceled"
 
 # --- Eventos recibidos desde payment (refund)
 RK_EVT_REFUND_RESULT = "refund.result"
-RK_EVT_REFUNDED_ALT = "evt_refunded"
-RK_EVT_REFUND_FAILED_ALT = "evt_refund_failed"
+RK_EVT_REFUNDED_ALT = "evt.refunded"
+RK_EVT_REFUND_FAILED_ALT = "evt.refund.failed"
 
 RK_EVT_REFUND_EVENTS = (
     RK_EVT_REFUND_RESULT,
@@ -99,7 +99,7 @@ async def publish_cancel_fabrication_command(order_id: int, saga_id: str) -> Non
     """
     connection, channel = await get_channel()
     try:
-        exchange = await declare_exchange_command(channel)
+        exchange = await declare_exchange_saga_cancelation_commands(channel)
 
         payload = {"order_id": int(order_id), "saga_id": str(saga_id)}
         msg = Message(
@@ -125,7 +125,7 @@ async def publish_refund_command(order_id: int, user_id: int, saga_id: str) -> N
     """
     connection, channel = await get_channel()
     try:
-        exchange = await declare_exchange_command(channel)
+        exchange = await declare_exchange_saga_cancelation_commands(channel)
 
         payload = {"order_id": int(order_id), "user_id": int(user_id), "saga_id": str(saga_id)}
         msg = Message(
@@ -187,7 +187,7 @@ async def listen_evt_fabrication_canceled() -> None:
         exchange_saga (eventos del saga)
     """
     _, channel = await get_channel()
-    exchange = await declare_exchange_saga(channel)
+    exchange = await declare_exchange_saga_cancelation_events(channel)
 
     queue = await channel.declare_queue(Q_EVT_FABRICATION_CANCELED, durable=True)
     await queue.bind(exchange, routing_key=RK_EVT_MFG_CANCELED)
@@ -230,6 +230,7 @@ async def _handle_refund_result(message) -> None:
 
         if status == "refunded":
             await saga.on_event_saga({"type": "refunded"})
+            logger.info("[ORDER] 💰 El dinero se ha devuelto a la cartera")
         else:
             await saga.on_event_saga({"type": "refund_failed", "reason": reason or "unknown"})
 
@@ -250,7 +251,7 @@ async def listen_refund_result() -> None:
         exchange_saga
     """
     _, channel = await get_channel()
-    exchange = await declare_exchange_saga(channel)
+    exchange = await declare_exchange_saga_cancelation_events(channel)
 
     queue = await channel.declare_queue(Q_REFUND_RESULT, durable=True)
 
