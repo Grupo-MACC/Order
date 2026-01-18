@@ -31,6 +31,9 @@ async def lifespan(__app: FastAPI):
         ok = await consul.register_self()
         logger.info("✅ Consul register_self: %s", ok)
 
+        # Asegura que el engine del chassis existe
+        await database.init_database()
+        
         try:
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
@@ -56,6 +59,7 @@ async def lifespan(__app: FastAPI):
             task_refund_result = asyncio.create_task(saga_broker_order_cancel.listen_refund_result())
         except Exception as e:
             logger.error(f"Error lanzando broker service: {e}")
+
 
         yield
     finally:
