@@ -10,10 +10,11 @@ from routers import order_router, order_router_private
 from microservice_chassis_grupo2.sql import database, models
 from broker import order_broker_service
 from saga.broker_saga import saga_broker_order_confirm, saga_broker_order_cancel
-from consul_client import create_consul_client
+from consul_client import get_consul_client
 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
+logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"),disable_existing_loggers=False,)
 logger = logging.getLogger(__name__)
 
 
@@ -21,25 +22,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
-    consul_client = create_consul_client()
-    service_id = os.getenv("SERVICE_ID", "order-1")
-    service_name = os.getenv("SERVICE_NAME", "order")
-    service_port = int(os.getenv("SERVICE_PORT", 5000))
+    consul = get_consul_client()
 
     try:
         logger.info("Starting up")
         
-        # Register with Consul
-        result = await consul_client.register_service(
-            service_name=service_name,
-            service_id=service_id,
-            service_port=service_port,
-            service_address=service_name,  # Docker DNS
-            tags=["fastapi", service_name],
-            meta={"version": "2.0.0"},
-            health_check_url=f"http://{service_name}:{service_port}/docs"
-        )
-        logger.info(f"✅ Consul service registration: {result}")
+        # Registro "auto" (usa SERVICE_* y CONSUL_* desde entorno)
+        ok = await consul.register_self()
+        logger.info("✅ Consul register_self: %s", ok)
 
         # Asegura que el engine del chassis existe
         await database.init_database()
@@ -89,9 +79,17 @@ async def lifespan(__app: FastAPI):
         task_evt_fabrication_canceled.cancel()
         task_refund_result.cancel()
         
-        # Deregister from Consul
-        result = await consul_client.deregister_service(service_id)
-        logger.info(f"✅ Consul service deregistration: {result}")
+        # Deregistro (auto) + cierre del cliente HTTP
+        try:
+            ok = await consul.deregister_self()
+            logger.info("✅ Consul deregister_self: %s", ok)
+        except Exception:
+            logger.exception("Error desregistrando en Consul")
+
+        try:
+            await consul.aclose()
+        except Exception:
+            logger.exception("Error cerrando cliente Consul")
 
 
 # OpenAPI Documentation ############################################################################
@@ -113,6 +111,18 @@ app.include_router(order_router.router)
 app.include_router(order_router_private.router)
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
+    """
+    Application entry point. Starts the Uvicorn server with SSL configuration.
+    Runs the FastAPI application on host.
+    """
+    cert_file = os.getenv("SERVICE_CERT_FILE", "/certs/order/order-cert.pem")
+    key_file = os.getenv("SERVICE_KEY_FILE", "/certs/order/order-key.pem")
 
-#python -m uvicorn main:app --reload --port 5000
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("SERVICE_PORT", "5000")),
+        reload=True,
+        ssl_certfile=cert_file,
+        ssl_keyfile=key_file,
+    )
