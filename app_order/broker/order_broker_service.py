@@ -141,7 +141,7 @@ async def _download_auth_public_key(auth_base_url: str) -> str:
     Nota:
         - Separar esta función facilita reintentos.
     """
-    async with httpx.AsyncClient(verify=_internal_ca_file(), timeout=5.0) as client:
+    async with httpx.AsyncClient(verify=False, timeout=5.0) as client:
         resp = await client.get(f"{auth_base_url}/auth/public-key")
         resp.raise_for_status()
         return resp.text
