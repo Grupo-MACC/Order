@@ -8,4 +8,4 @@ services:
             - "5000:5000"
         restart: on-failure
         volumes:
-            - ./certs:/order/certs:ro
+            - ./certs:/certs:ro

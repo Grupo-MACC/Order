@@ -13,5 +13,6 @@ pika
 aio_pika
 pyJWT
 cryptography
-microservice-chassis-grupo2_cc
+microservice-chassis-grupo2_cc_prod
 boto3
+aiomysql
