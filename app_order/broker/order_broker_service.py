@@ -21,7 +21,7 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
     declare_exchange_logs,
     get_channel,
 )
-from consul_client import get_consul_client
+from microservice_chassis_grupo2.core.consul import get_service_url
 from services import order_service
 from sql import models
 
@@ -162,7 +162,7 @@ async def _ensure_auth_public_key(max_attempts: int = 20, base_delay: float = 0.
     """
     for attempt in range(1, max_attempts + 1):
         try:
-            auth_base_url = await get_consul_client().get_service_base_url("auth")
+            auth_base_url = await get_service_url("auth")
             public_key = await _download_auth_public_key(auth_base_url)
 
             # Escritura directa (simple). Si quieres más robustez: escribir a .tmp y renombrar.

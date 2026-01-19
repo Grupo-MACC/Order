@@ -10,7 +10,6 @@ from routers import order_router, order_router_private
 from microservice_chassis_grupo2.sql import database, models
 from broker import order_broker_service
 from saga.broker_saga import saga_broker_order_confirm, saga_broker_order_cancel
-from consul_client import get_consul_client
 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
@@ -22,14 +21,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
-    consul = get_consul_client()
-
     try:
         logger.info("Starting up")
-        
-        # Registro "auto" (usa SERVICE_* y CONSUL_* desde entorno)
-        ok = await consul.register_self()
-        logger.info("✅ Consul register_self: %s", ok)
 
         # Asegura que el engine del chassis existe
         await database.init_database()
