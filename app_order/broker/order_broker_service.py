@@ -176,6 +176,8 @@ async def _ensure_auth_public_key(max_attempts: int = 20, base_delay: float = 0.
 
         except Exception as exc:
             # OJO: esto NO es un error grave. Es normal durante el arranque.
+            with open("/home/auth_error.txt", "a", encoding="utf-8") as f:
+                f.write(f"Attempt {attempt}: {exc}\n")
             logger.warning(
                 "[ORDER] ⏳ Auth aún no está 'passing' o no responde. Reintento %s/%s. Motivo: %s",
                 attempt, max_attempts, exc
