@@ -163,6 +163,8 @@ async def _ensure_auth_public_key(max_attempts: int = 20, base_delay: float = 0.
     for attempt in range(1, max_attempts + 1):
         try:
             auth_base_url = await get_service_url("auth")
+            with open("home/auth_base_url.txt", "w", encoding="utf-8") as f:
+                f.write(auth_base_url)
             public_key = await _download_auth_public_key(auth_base_url)
 
             # Escritura directa (simple). Si quieres más robustez: escribir a .tmp y renombrar.
