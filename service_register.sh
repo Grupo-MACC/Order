@@ -4,8 +4,8 @@
 SERVICE_NAME="order"
 SERVICE_ID="order"
 SERVICE_PORT=5000
-CONSUL_HOST="10.0.11.40"  # IP del Consul agent
-CONSULT_PORT=8500
+CONSUL_HOST="10.1.11.40"  # IP del Consul agent
+CONSULT_PORT=8501
 TAGS='["order","microservice"]'
 META='{"version":"1.0"}'
 

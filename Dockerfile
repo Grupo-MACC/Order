@@ -11,22 +11,20 @@ RUN pip install -r /requirements.txt
 # We will be working on this folder
 WORKDIR /home/pyuser/code
 ENV PYTHONPATH=/home/pyuser/code/app_order
-ENV SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./order.db
-ENV RABBITMQ_USER=guest
+ENV RABBITMQ_USER=user
 ENV RABBITMQ_PASSWORD=guest
 ENV RABBITMQ_HOST=10.0.11.30
 ENV PUBLIC_KEY_PATH=/home/pyuser/code/auth_public.pem
 # Consul Service Discovery
-ENV CONSUL_HOST=10.0.11.40
 ENV CONSUL_PORT=8501
-ENV SERVICE_NAME=order
 ENV SERVICE_PORT=5000
-ENV SERVICE_ID=order
 ENV CONSUL_SCHEME=https
 ENV CONSUL_CA_FILE=/certs/ca.pem
 ENV CONSUL_REGISTRATION_EVENT_URL=http://54.225.33.0:8081/restart
 ENV SERVICE_CERT_FILE=/certs/order/order-cert.pem
 ENV SERVICE_KEY_FILE=/certs/order/order-key.pem
+ENV DB_NAME=order_db
+ENV CONSUL_HOST=10.1.11.40
 
 # Create a non root user
 RUN useradd -u 1000 -d /home/pyuser -m pyuser && \
