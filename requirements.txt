@@ -14,3 +14,4 @@ aio_pika
 pyJWT
 cryptography
 microservice-chassis-grupo2_cc
+boto3

@@ -22,19 +22,22 @@ logger = logging.getLogger(__name__)
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
     try:
-        logger.info("Starting up")
-
-        # Asegura que el engine del chassis existe
-        await database.init_database()
+        try:
+            logger.info("Initializing database connection")
+            await database.init_database()
+            logger.info("Database connection initialized")
+        except Exception as e:
+            logger.error(f"Could not initialize database connection: {e}", exc_info=True)
+            with open("/home/pyuser/code/error.txt", "w") as f:
+                f.write(f"{e}\n")
+            raise e
         
         try:
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
         except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
+            logger.error("Could not create tables at startup")
 
         try:
             #task_payment = asyncio.create_task(order_broker_service.consume_payment_events())
@@ -70,18 +73,6 @@ async def lifespan(__app: FastAPI):
 
         task_evt_fabrication_canceled.cancel()
         task_refund_result.cancel()
-        
-        # Deregistro (auto) + cierre del cliente HTTP
-        try:
-            ok = await consul.deregister_self()
-            logger.info("✅ Consul deregister_self: %s", ok)
-        except Exception:
-            logger.exception("Error desregistrando en Consul")
-
-        try:
-            await consul.aclose()
-        except Exception:
-            logger.exception("Error cerrando cliente Consul")
 
 
 # OpenAPI Documentation ############################################################################
