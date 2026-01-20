@@ -28,8 +28,6 @@ async def lifespan(__app: FastAPI):
             logger.info("Database connection initialized")
         except Exception as e:
             logger.error(f"Could not initialize database connection: {e}", exc_info=True)
-            with open("/home/pyuser/code/error.txt", "w") as f:
-                f.write(f"{e}\n")
             raise e
         
         try:
