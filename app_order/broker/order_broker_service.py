@@ -474,10 +474,6 @@ async def handle_auth_events(message) -> None:
     """
     async with message.process():
         data = json.loads(message.body)
-        
-        # DEBUG: escribir siempre que llegue un mensaje
-        with open("/home/pyuser/code/auth_message_received.txt", "a", encoding="utf-8") as f:
-            f.write(f"Mensaje recibido: {data}\n")
 
         await publish_to_logger(
                 message={"message": "Order ha recibido mensaje de Auth", "data": str(data)},

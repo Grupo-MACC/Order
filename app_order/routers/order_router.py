@@ -7,9 +7,8 @@ from fastapi import APIRouter, Depends, status, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
 #from dependencies import get_current_user
-from microservice_chassis_grupo2.core.dependencies import get_current_user, check_public_key
+from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db, check_public_key
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
-from dependencies import get_db
 from sql import crud, schemas, models
 from broker import order_broker_service
 from services import order_service
