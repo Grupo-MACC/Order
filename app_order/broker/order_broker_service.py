@@ -52,13 +52,16 @@ RK_WAREHOUSE_FABRICATION_COMPLETED = "warehouse.fabrication.completed"
 #     No definimos constantes aquí porque el topic se construye dinámicamente:
 #     "order.info", "order.error", "order.debug", etc.
 
-# --- Nombres de colas
+# --- Nombres de colas (con sufijo único para evitar conflictos entre microservicios)
+import uuid
+_AUTH_SUFFIX = uuid.uuid4().hex[:8]
+
 Q_PAYMENT_PAID = "order_paid_queue"
 Q_PAYMENT_FAILED = "order_failed_queue"
 
 Q_DELIVERY_READY = "delivery_ready_queue"
 
-Q_AUTH_EVENTS = "order_queue"
+Q_AUTH_EVENTS = f"order_queue_{_AUTH_SUFFIX}"
 
 Q_WAREHOUSE_EVENTS = "warehouse_events_queue"
 
@@ -188,6 +191,54 @@ async def _ensure_auth_public_key(max_attempts: int = 20, base_delay: float = 0.
             await asyncio.sleep(delay)
 
     raise RuntimeError("No se pudo obtener la clave pública de Auth tras varios reintentos.")
+
+
+async def fetch_auth_public_key_on_startup(max_attempts: int = 60, base_delay: float = 2.0) -> None:
+    """
+    Intenta obtener la clave pública de Auth al iniciar Order.
+    
+    Por qué es necesario:
+        - Si esta réplica de Order arranca DESPUÉS de que Auth publicó 'auth.running',
+          nunca recibirá ese mensaje (ya fue publicado antes de que existiera la cola).
+        - Este método garantiza que SIEMPRE intentamos obtener la clave al arrancar.
+    
+    Estrategia:
+        - Reintentos con backoff exponencial (hasta ~2 minutos).
+        - Si Auth no está disponible, seguimos reintentando en background.
+        - No bloquea el arranque de Order (se ejecuta como task).
+    
+    Nota:
+        - El listener de auth.running sigue activo para detectar reinicios de Auth
+          y obtener nuevas claves si Auth regenera sus RSA keys.
+    """
+    logger.info("[ORDER] 🔑 Iniciando obtención de clave pública de Auth al arranque...")
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            auth_base_url = await get_service_url("auth")
+            public_key = await _download_auth_public_key(auth_base_url)
+            
+            with open(PUBLIC_KEY_PATH, "w", encoding="utf-8") as f:
+                f.write(public_key)
+            
+            await publish_to_logger(
+                message={"message": "Clave pública guardada", "path": PUBLIC_KEY_PATH},
+                topic=TOPIC_INFO,
+            )
+            
+            logger.info("[ORDER] ✅ Clave pública de Auth obtenida al arranque y guardada en %s", PUBLIC_KEY_PATH)
+            return
+            
+        except Exception as exc:
+            logger.warning(
+                "[ORDER] ⏳ (Startup) Auth no disponible aún. Reintento %s/%s. Motivo: %s",
+                attempt, max_attempts, exc
+            )
+            # Backoff exponencial con cap de 30 segundos
+            delay = min(30.0, base_delay * (1.5 ** (attempt - 1)))
+            await asyncio.sleep(delay)
+    
+    logger.error("[ORDER] ❌ No se pudo obtener la clave pública de Auth tras %s intentos al arranque", max_attempts)
 
 
 # =============================================================================
@@ -428,7 +479,20 @@ async def handle_auth_events(message) -> None:
     """
     async with message.process():
         data = json.loads(message.body)
+        
+        # DEBUG: escribir siempre que llegue un mensaje
+        with open("/home/pyuser/code/auth_message_received.txt", "a", encoding="utf-8") as f:
+            f.write(f"Mensaje recibido: {data}\n")
+
+        await publish_to_logger(
+                message={"message": "Order ha recibido mensaje de Auth", "data": str(data)},
+                topic=TOPIC_DEBUG,
+            )
+        
+        logger.info("[ORDER] 📩 Mensaje de Auth recibido: %s", data)
+        
         if data.get("status") != "running":
+            logger.info("[ORDER] ⏭️ Status no es 'running', ignorando: %s", data.get("status"))
             return
 
         try:

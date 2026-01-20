@@ -53,6 +53,9 @@ async def lifespan(__app: FastAPI):
             #----- SAGA ORDER CANCEL -----
             task_evt_fabrication_canceled = asyncio.create_task(saga_broker_order_cancel.listen_evt_fabrication_canceled())
             task_refund_result = asyncio.create_task(saga_broker_order_cancel.listen_refund_result())
+            
+            #----- AUTH PUBLIC KEY: Obtener al inicio (para réplicas que arrancan después de auth.running) -----
+            task_fetch_public_key = asyncio.create_task(order_broker_service.fetch_auth_public_key_on_startup())
         except Exception as e:
             logger.error(f"Error lanzando broker service: {e}")
 
