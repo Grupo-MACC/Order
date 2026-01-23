@@ -61,3 +61,13 @@ async def update_cancel_saga(saga_id: str, state: str, error: str | None = None)
     """Actualiza el estado interno de la saga de cancelación."""
     async for db in get_db():
         return await crud.update_cancel_saga(db=db, saga_id=saga_id, state=state, error=error)
+    
+async def add_saga_history(order_id: int, saga_type: str, state: str, error: str | None = None) -> Optional[models.SagasHistory]:
+    """Añade una entrada al histórico de sagas."""
+    async for db in get_db():
+        return await crud.create_saga_history(db=db, order_id=order_id, saga_type=saga_type, state=state, error=error)
+
+async def get_saga_history(order_id: int, saga_type: str) -> list[models.SagasHistory]:
+    """Obtiene el histórico de sagas para una order y tipo dado."""
+    async for db in get_db():
+        return await crud.get_saga_history(db=db, order_id=order_id, saga_type=saga_type)

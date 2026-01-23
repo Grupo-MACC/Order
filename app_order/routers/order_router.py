@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """FastAPI router definitions."""
 import logging, uuid, os
-from typing import List
+from typing import Optional
 import asyncio
+from fastapi import Query
 from fastapi import APIRouter, Depends, status, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 #from dependencies import get_db
@@ -189,6 +190,30 @@ async def remove_order_by_id(
     if not order:
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
     return await crud.delete_order(db, order_id)
+
+@router.get(
+    "/sagas/history/{order_id}",
+    summary="Retrieve saga history for an order",
+)
+async def get_saga_history(
+    order_id: int,
+    saga_type: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    user: int = Depends(get_current_user),
+):
+    """Retrieve saga history for an order.
+    If saga_type is not provided, return all sagas.
+    """
+
+    logger.debug("GET '/order/sagas/history/%i' endpoint called.", order_id)
+
+    history = await order_service.get_saga_history(
+        db=db,
+        order_id=order_id,
+        saga_type=saga_type,
+    )
+    
+    return history
 
 #region POST /order/id/cancel
 @router.post(

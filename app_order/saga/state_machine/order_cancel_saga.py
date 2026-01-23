@@ -7,10 +7,12 @@ Responsabilidad:
 """
 import logging
 from saga.state_machine.order_cancel_states import Canceling
+from services.order_service import add_saga_history
 
 logger = logging.getLogger(__name__)
 
 FINAL_STATES = {"Canceled", "CancelPendingRefund"}
+SAGA_NAME = "OrderCancelSaga"
 
 
 class CancelSaga:
@@ -40,6 +42,7 @@ class CancelSaga:
     async def on_event_saga(self, event: dict):
         """Procesa un evento y transiciona de estado si aplica."""
         new_state = await self.state.on_event(event, self)
+        await add_saga_history(order_id=self.order.id, saga_type=SAGA_NAME, state=str(new_state.__class__.__name__), error=None if not self.last_error else str(self.last_error))
 
         if new_state.__class__ != self.state.__class__:
             old_name = self.state.__class__.__name__

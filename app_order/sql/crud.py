@@ -131,3 +131,30 @@ async def update_cancel_saga(db: AsyncSession, saga_id: str, state: str, error: 
     await db.commit()
     await db.refresh(db_saga)
     return db_saga
+
+
+async def create_saga_history(db: AsyncSession, order_id: int, saga_type: str, state: str, error: str | None = None):
+    """Crea un registro en el histórico de sagas."""
+    db_history = models.SagasHistory(
+        order_id=int(order_id),
+        saga_type=str(saga_type),
+        state=str(state),
+        error=str(error) if error is not None else None,
+    )
+    db.add(db_history)
+    await db.commit()
+    await db.refresh(db_history)
+    return db_history
+
+async def get_saga_history(db: AsyncSession, order_id: int, saga_type: str | None = None):
+    """Obtiene el histórico de sagas para un pedido.
+    Si saga_type es None, devuelve todas las sagas del pedido."""
+    query = select(models.SagasHistory).where(
+        models.SagasHistory.order_id == order_id
+    )
+
+    if saga_type:
+        query = query.where(models.SagasHistory.saga_type == saga_type)
+
+    result = await db.execute(query)
+    return result.scalars().all()

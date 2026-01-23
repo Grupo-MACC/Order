@@ -1,8 +1,9 @@
 from saga.state_machine.order_confirm_states import Pending
 import logging
-from services.order_service import update_order_creation_status
+from services.order_service import update_order_creation_status, add_saga_history
 
 FINAL_STATES = {"Confirmed", "NoMoney", "Returned"}
+SAGA_NAME = "OrderConfirmSaga"
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,10 @@ class OrderSaga():
         try:
             await update_order_creation_status(self.order.id, str(self.state.__class__.__name__))
             print(f"💾 Estado de saga persistido en BD: {self.state.__class__.__name__}")
+            await add_saga_history(order_id=self.order.id, saga_type=SAGA_NAME, state=str(self.state.__class__.__name__), error=None)
         except Exception as e:
             print(f"❌ Error persistiendo estado de saga en BD: {e}")
+            await add_saga_history(order_id=self.order.id, saga_type=SAGA_NAME, state=str(self.state.__class__.__name__), error=str(e))
             
     async def on_event_saga(self, event):
         try:

@@ -119,3 +119,27 @@ class CancelSaga(BaseModel):
     order_id = Column(Integer, nullable=False)
     state = Column(String(64), nullable=False, default="Canceling")
     error = Column(TEXT, nullable=True)
+
+
+class SagasHistory(BaseModel):
+    """Histórico de sagas para auditoría y debugging.
+
+    Por qué existe:
+        - Llevar un registro de todas las sagas iniciadas.
+        - Útil para auditoría y debugging.
+
+    Campos:
+        saga_id: UUID string. Clave primaria.
+        order_id: Pedido afectado.
+        saga_type: Tipo de saga (e.g., "Creation", "Cancellation").
+        state: Estado final de la saga.
+        error: Texto opcional con causa del fallo si hubo error.
+    """
+
+    __tablename__ = "sagas_history"
+
+    order_id = Column(Integer, primary_key=False)
+    saga_type = Column(String(64), primary_key=False)
+    state = Column(String(64), nullable=False)
+    
+    error = Column(TEXT, nullable=True)
