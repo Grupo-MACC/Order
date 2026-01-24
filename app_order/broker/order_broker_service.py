@@ -54,16 +54,16 @@ RK_WAREHOUSE_FABRICATION_COMPLETED = "warehouse.fabrication.completed"
 
 # --- Nombres de colas (con sufijo único para evitar conflictos entre microservicios)
 import uuid
-_AUTH_SUFFIX = uuid.uuid4().hex[:8]
+RID = uuid.uuid4().hex[:8] # Unique ID for this instance
 
-Q_PAYMENT_PAID = "order_paid_queue"
-Q_PAYMENT_FAILED = "order_failed_queue"
+Q_PAYMENT_PAID = f"order_paid_queue.{RID}"
+Q_PAYMENT_FAILED = f"order_failed_queue.{RID}"
 
-Q_DELIVERY_READY = "delivery_ready_queue"
+Q_DELIVERY_READY = f"delivery_ready_queue.{RID}"
 
-Q_AUTH_EVENTS = f"order_queue_{_AUTH_SUFFIX}"
+Q_AUTH_EVENTS = f"order_queue.{RID}"
 
-Q_WAREHOUSE_EVENTS = "warehouse_events_queue"
+Q_WAREHOUSE_EVENTS = f"warehouse_events_queue.{RID}"
 
 # --- Warehouse binding (env var + default)
 ENV_WAREHOUSE_EVENTS_BINDING = "WAREHOUSE_EVENTS_BINDING"
@@ -296,8 +296,9 @@ async def consume_payment_events() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange(channel)
 
-    order_paid_queue = await channel.declare_queue(Q_PAYMENT_PAID, durable=True)
-    order_failed_queue = await channel.declare_queue(Q_PAYMENT_FAILED, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    order_paid_queue = await channel.declare_queue(Q_PAYMENT_PAID, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
+    order_failed_queue = await channel.declare_queue(Q_PAYMENT_FAILED, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
 
     await order_paid_queue.bind(exchange, routing_key=RK_PAYMENT_PAID)
     await order_failed_queue.bind(exchange, routing_key=RK_PAYMENT_FAILED)
@@ -397,7 +398,8 @@ async def consume_delivery_events() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange(channel)
 
-    delivery_ready_queue = await channel.declare_queue(Q_DELIVERY_READY, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    delivery_ready_queue = await channel.declare_queue(Q_DELIVERY_READY, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await delivery_ready_queue.bind(exchange, routing_key=RK_DELIVERY_READY)
 
     await delivery_ready_queue.consume(handle_delivery_ready)
@@ -454,7 +456,8 @@ async def consume_auth_events() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange(channel)
 
-    order_queue = await channel.declare_queue(Q_AUTH_EVENTS, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    order_queue = await channel.declare_queue(Q_AUTH_EVENTS, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await order_queue.bind(exchange, routing_key=RK_AUTH_RUNNING)
     await order_queue.bind(exchange, routing_key=RK_AUTH_NOT_RUNNING)
 
@@ -521,7 +524,8 @@ async def consume_warehouse_events() -> None:
 
     binding = os.getenv(ENV_WAREHOUSE_EVENTS_BINDING, DEFAULT_WAREHOUSE_EVENTS_BINDING)
 
-    queue = await channel.declare_queue(Q_WAREHOUSE_EVENTS, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    queue = await channel.declare_queue(Q_WAREHOUSE_EVENTS, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await queue.bind(exchange, routing_key=binding)
     await queue.consume(handle_warehouse_event)
 

@@ -22,6 +22,7 @@ Notas de diseño:
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from aio_pika import Message
@@ -49,9 +50,12 @@ RK_EVT_DELIVERY_RESULT = "evt.delivery.checked"
 RK_EVT_MONEY_RETURNED = "evt.money.returned"
 
 # --- Nombres de colas
-Q_PAYMENT_RESULT = "payment_result_queue"
-Q_DELIVERY_RESULT = "delivery_result_queue"
-Q_MONEY_RETURNED = "money_returned_queue"
+import uuid
+RID = uuid.uuid4().hex[:8] # Unique ID for this instance
+
+Q_PAYMENT_RESULT = f"payment_result_queue.{RID}"
+Q_DELIVERY_RESULT = f"delivery_result_queue.{RID}"
+Q_MONEY_RETURNED = f"money_returned_queue.{RID}"
 
 
 # =============================================================================
@@ -305,7 +309,8 @@ async def listen_payment_result() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
 
-    queue = await channel.declare_queue(Q_PAYMENT_RESULT, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    queue = await channel.declare_queue(Q_PAYMENT_RESULT, durable=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await queue.bind(exchange, routing_key=RK_EVT_PAYMENT_RESULT)
     await queue.consume(handle_payment_result)
 
@@ -320,7 +325,8 @@ async def listen_delivery_result() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
 
-    queue = await channel.declare_queue(Q_DELIVERY_RESULT, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    queue = await channel.declare_queue(Q_DELIVERY_RESULT, durable=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await queue.bind(exchange, routing_key=RK_EVT_DELIVERY_RESULT)
     await queue.consume(handle_delivery_result)
 
@@ -335,7 +341,8 @@ async def listen_money_returned_result() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange_saga(channel)
 
-    queue = await channel.declare_queue(Q_MONEY_RETURNED, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    queue = await channel.declare_queue(Q_MONEY_RETURNED, durable=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await queue.bind(exchange, routing_key=RK_EVT_MONEY_RETURNED)
     await queue.consume(handle_money_returned)
 

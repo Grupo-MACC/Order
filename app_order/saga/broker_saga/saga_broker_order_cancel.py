@@ -20,6 +20,7 @@ Notas de diseño:
 import asyncio
 import json
 import logging
+import os
 from typing import Optional, Dict, Any
 
 from aio_pika import Message
@@ -55,8 +56,11 @@ RK_EVT_REFUND_EVENTS = (
 )
 
 # --- Nombres de colas
-Q_EVT_FABRICATION_CANCELED = "evt_fabrication_canceled_queue"
-Q_REFUND_RESULT = "refund_result_queue"
+import uuid
+RID = uuid.uuid4().hex[:8] # Unique ID for this instance
+
+Q_EVT_FABRICATION_CANCELED = f"evt_fabrication_canceled_queue.{RID}"
+Q_REFUND_RESULT = f"refund_result_queue.{RID}"
 
 
 # =============================================================================
@@ -189,7 +193,8 @@ async def listen_evt_fabrication_canceled() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange_saga_cancelation_events(channel)
 
-    queue = await channel.declare_queue(Q_EVT_FABRICATION_CANCELED, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad. 
+    queue = await channel.declare_queue(Q_EVT_FABRICATION_CANCELED, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
     await queue.bind(exchange, routing_key=RK_EVT_MFG_CANCELED)
     await queue.consume(_handle_evt_fabrication_canceled)
 
@@ -253,7 +258,8 @@ async def listen_refund_result() -> None:
     _, channel = await get_channel()
     exchange = await declare_exchange_saga_cancelation_events(channel)
 
-    queue = await channel.declare_queue(Q_REFUND_RESULT, durable=True)
+    # Se crean colas por réplica (INSTANCE_ID) para evitar conflictos. Auto-delete tras 30 días de inactividad.
+    queue = await channel.declare_queue(Q_REFUND_RESULT, durable=True, auto_delete=True, arguments={"x-expires": 30 * 24 * 60 * 60 * 1000})
 
     # FIX: bind de múltiples routing keys (antes se pasaba una tupla, eso está mal).
     for rk in RK_EVT_REFUND_EVENTS:
