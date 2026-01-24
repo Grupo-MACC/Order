@@ -140,6 +140,6 @@ class SagasHistory(BaseModel):
 
     order_id = Column(Integer, primary_key=True)
     saga_type = Column(String(64), primary_key=True)
-    state = Column(String(64), nullable=False)
+    state = Column(String(64), primary_key=True)
     
     error = Column(TEXT, nullable=True)
