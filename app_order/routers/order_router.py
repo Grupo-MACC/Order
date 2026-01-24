@@ -208,7 +208,6 @@ async def get_saga_history(
     logger.debug("GET '/order/sagas/history/%i' endpoint called.", order_id)
 
     history = await order_service.get_saga_history(
-        db=db,
         order_id=order_id,
         saga_type=saga_type,
     )
