@@ -138,8 +138,8 @@ class SagasHistory(BaseModel):
 
     __tablename__ = "sagas_history"
 
-    order_id = Column(Integer, primary_key=False)
-    saga_type = Column(String(64), primary_key=False)
+    order_id = Column(Integer, primary_key=True)
+    saga_type = Column(String(64), primary_key=True)
     state = Column(String(64), nullable=False)
     
     error = Column(TEXT, nullable=True)
